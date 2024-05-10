@@ -356,9 +356,7 @@ class Client:
             raise e
 
     def send_data(self, data, hash_data, protocol):
-        with OptionalHttpxClient(
-                self.httpx_client, verify=self.ssl_verify
-        ) as client:
+        with OptionalHttpxClient(self.httpx_client, verify=self.ssl_verify) as client:
             req = client.post(
                 self.sse_data_url,
                 json={**data, **hash_data},
@@ -1375,10 +1373,10 @@ class Endpoint:
         return str(dest.resolve())
 
     def _sse_fn_v0(self, data: dict, hash_data: dict, helper: Communicator):
-        async with OptionalHttpxClient(
-                self.client.httpx_client,
-                timeout=httpx.Timeout(timeout=None),
-                verify=self.client.ssl_verify,
+        with OptionalHttpxClient(
+            self.client.httpx_client,
+            timeout=httpx.Timeout(timeout=None),
+            verify=self.client.ssl_verify,
         ) as client:
             return utils.get_pred_from_sse_v0(
                 client,
