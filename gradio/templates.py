@@ -39,6 +39,7 @@ class TextArea(components.Textbox):
         autoscroll: bool = True,
         elem_classes: list[str] | str | None = None,
         render: bool = True,
+        key: int | str | None = None,
         type: Literal["text", "password", "email"] = "text",
         text_align: Literal["left", "right"] | None = None,
         rtl: bool = False,
@@ -63,6 +64,7 @@ class TextArea(components.Textbox):
             autoscroll=autoscroll,
             elem_classes=elem_classes,
             render=render,
+            key=key,
             type=type,
             text_align=text_align,
             rtl=rtl,
@@ -100,6 +102,7 @@ class Sketchpad(components.ImageEditor):
         elem_id: str | None = None,
         elem_classes: list[str] | str | None = None,
         render: bool = True,
+        key: int | str | None = None,
         mirror_webcam: bool = True,
         show_share_button: bool | None = None,
         _selectable: bool = False,
@@ -109,6 +112,7 @@ class Sketchpad(components.ImageEditor):
         brush: Brush | None = None,
         format: str = "webp",
         layers: bool = True,
+        canvas_size: tuple[int, int] | None = None,
     ):
         if not brush:
             brush = Brush(colors=["#000000"], color_mode="fixed")
@@ -131,6 +135,7 @@ class Sketchpad(components.ImageEditor):
             elem_id=elem_id,
             elem_classes=elem_classes,
             render=render,
+            key=key,
             mirror_webcam=mirror_webcam,
             show_share_button=show_share_button,
             _selectable=_selectable,
@@ -140,6 +145,7 @@ class Sketchpad(components.ImageEditor):
             brush=brush,
             format=format,
             layers=layers,
+            canvas_size=canvas_size,
         )
 
 
@@ -173,6 +179,7 @@ class Paint(components.ImageEditor):
         elem_id: str | None = None,
         elem_classes: list[str] | str | None = None,
         render: bool = True,
+        key: int | str | None = None,
         mirror_webcam: bool = True,
         show_share_button: bool | None = None,
         _selectable: bool = False,
@@ -182,6 +189,7 @@ class Paint(components.ImageEditor):
         brush: Brush | None = None,
         format: str = "webp",
         layers: bool = True,
+        canvas_size: tuple[int, int] | None = None,
     ):
         super().__init__(
             value=value,
@@ -202,6 +210,7 @@ class Paint(components.ImageEditor):
             elem_id=elem_id,
             elem_classes=elem_classes,
             render=render,
+            key=key,
             mirror_webcam=mirror_webcam,
             show_share_button=show_share_button,
             _selectable=_selectable,
@@ -211,6 +220,7 @@ class Paint(components.ImageEditor):
             brush=brush,
             format=format,
             layers=layers,
+            canvas_size=canvas_size,
         )
 
 
@@ -248,6 +258,7 @@ class ImageMask(components.ImageEditor):
         elem_id: str | None = None,
         elem_classes: list[str] | str | None = None,
         render: bool = True,
+        key: int | str | None = None,
         mirror_webcam: bool = True,
         show_share_button: bool | None = None,
         _selectable: bool = False,
@@ -257,6 +268,7 @@ class ImageMask(components.ImageEditor):
         brush: Brush | None = None,
         format: str = "webp",
         layers: bool = True,
+        canvas_size: tuple[int, int] | None = None,
     ):
         if not brush:
             brush = Brush(colors=["#000000"], color_mode="fixed")
@@ -279,6 +291,7 @@ class ImageMask(components.ImageEditor):
             elem_id=elem_id,
             elem_classes=elem_classes,
             render=render,
+            key=key,
             mirror_webcam=mirror_webcam,
             show_share_button=show_share_button,
             _selectable=_selectable,
@@ -288,6 +301,7 @@ class ImageMask(components.ImageEditor):
             brush=brush,
             format=format,
             layers=layers,
+            canvas_size=canvas_size,
         )
 
 
@@ -319,6 +333,7 @@ class PlayableVideo(components.Video):
         elem_id: str | None = None,
         elem_classes: list[str] | str | None = None,
         render: bool = True,
+        key: int | str | None = None,
         mirror_webcam: bool = True,
         include_audio: bool | None = None,
         autoplay: bool = False,
@@ -345,6 +360,7 @@ class PlayableVideo(components.Video):
             elem_id=elem_id,
             elem_classes=elem_classes,
             render=render,
+            key=key,
             mirror_webcam=mirror_webcam,
             include_audio=include_audio,
             autoplay=autoplay,
@@ -380,6 +396,7 @@ class Microphone(components.Audio):
         elem_id: str | None = None,
         elem_classes: list[str] | str | None = None,
         render: bool = True,
+        key: int | str | None = None,
         format: Literal["wav", "mp3"] = "wav",
         autoplay: bool = False,
         show_download_button: bool | None = None,
@@ -406,6 +423,7 @@ class Microphone(components.Audio):
             elem_id=elem_id,
             elem_classes=elem_classes,
             render=render,
+            key=key,
             format=format,
             autoplay=autoplay,
             show_download_button=show_download_button,
@@ -443,6 +461,7 @@ class Files(components.File):
         elem_id: str | None = None,
         elem_classes: list[str] | str | None = None,
         render: bool = True,
+        key: int | str | None = None,
     ):
         super().__init__(
             value,
@@ -461,6 +480,7 @@ class Files(components.File):
             elem_id=elem_id,
             elem_classes=elem_classes,
             render=render,
+            key=key,
         )
 
 
@@ -492,6 +512,7 @@ class Numpy(components.Dataframe):
         elem_id: str | None = None,
         elem_classes: list[str] | str | None = None,
         render: bool = True,
+        key: int | str | None = None,
         wrap: bool = False,
         line_breaks: bool = True,
         column_widths: list[str | int] | None = None,
@@ -511,6 +532,7 @@ class Numpy(components.Dataframe):
             wrap=wrap,
             elem_classes=elem_classes,
             render=render,
+            key=key,
             line_breaks=line_breaks,
             column_widths=column_widths,
             every=every,
@@ -549,6 +571,7 @@ class Matrix(components.Dataframe):
         elem_id: str | None = None,
         elem_classes: list[str] | str | None = None,
         render: bool = True,
+        key: int | str | None = None,
         wrap: bool = False,
         line_breaks: bool = True,
         column_widths: list[str | int] | None = None,
@@ -568,6 +591,7 @@ class Matrix(components.Dataframe):
             wrap=wrap,
             elem_classes=elem_classes,
             render=render,
+            key=key,
             line_breaks=line_breaks,
             column_widths=column_widths,
             every=every,
@@ -606,6 +630,7 @@ class List(components.Dataframe):
         elem_id: str | None = None,
         elem_classes: list[str] | str | None = None,
         render: bool = True,
+        key: int | str | None = None,
         wrap: bool = False,
         line_breaks: bool = True,
         column_widths: list[str | int] | None = None,
@@ -625,6 +650,7 @@ class List(components.Dataframe):
             wrap=wrap,
             elem_classes=elem_classes,
             render=render,
+            key=key,
             line_breaks=line_breaks,
             column_widths=column_widths,
             every=every,

@@ -1,5 +1,167 @@
 # @gradio/app
 
+## 1.34.0
+
+### Features
+
+- [#8121](https://github.com/gradio-app/gradio/pull/8121) [`f5b710c`](https://github.com/gradio-app/gradio/commit/f5b710c919b0ce604ea955f0d5f4faa91095ca4a) - chore(deps): update dependency eslint to v9.  Thanks @renovate!
+- [#8174](https://github.com/gradio-app/gradio/pull/8174) [`a81e369`](https://github.com/gradio-app/gradio/commit/a81e36967c0973012e90ec7cf03b99cf3fea88ec) - Remove hatch installation in js/app/package.json which is no longer needed.  Thanks @whitphx!
+- [#8209](https://github.com/gradio-app/gradio/pull/8209) [`b9afe93`](https://github.com/gradio-app/gradio/commit/b9afe93915401df5bd6737c89395c2477acfa585) - Rename `eventSource_Factory` and `fetch_implementation`.  Thanks @hannahblair!
+- [#8109](https://github.com/gradio-app/gradio/pull/8109) [`bed2f82`](https://github.com/gradio-app/gradio/commit/bed2f82e2297b50f7b59423a3de05af0b9910724) - Implement JS Client tests.  Thanks @hannahblair!
+- [#8106](https://github.com/gradio-app/gradio/pull/8106) [`d0a759f`](https://github.com/gradio-app/gradio/commit/d0a759f3df8b564e2f21421d448b24fecf287306) - Pass Error status in /dev/reload stream.  Thanks @freddyaboulton!
+- [#7855](https://github.com/gradio-app/gradio/pull/7855) [`611c927`](https://github.com/gradio-app/gradio/commit/611c9273a301e925b5aad93a19272dccd53c39fa) - Lite wheel optimization.  Thanks @whitphx!
+
+### Fixes
+
+- [#8179](https://github.com/gradio-app/gradio/pull/8179) [`6a218b4`](https://github.com/gradio-app/gradio/commit/6a218b4148095aaa0c58d8c20973ba01c8764fc2) - rework upload to be a class method + pass client into each component.  Thanks @pngwn!
+- [#8181](https://github.com/gradio-app/gradio/pull/8181) [`cf52ca6`](https://github.com/gradio-app/gradio/commit/cf52ca6a51320ece97f009a177792840b5fbc785) - Ensure connectivity to private HF spaces with SSE protocol.  Thanks @hannahblair!
+
+### Dependency updates
+
+- @gradio/code@0.6.1
+- @gradio/atoms@0.7.2
+- @gradio/client@0.18.0
+- @gradio/upload@0.10.0
+- @gradio/utils@0.4.1
+- @gradio/wasm@0.10.1
+- @gradio/statustracker@0.5.1
+- @gradio/annotatedimage@0.6.0
+- @gradio/audio@0.11.0
+- @gradio/chatbot@0.10.0
+- @gradio/dataframe@0.8.0
+- @gradio/gallery@0.10.0
+- @gradio/highlightedtext@0.6.0
+- @gradio/image@0.11.0
+- @gradio/imageeditor@0.7.0
+- @gradio/multimodaltextbox@0.4.0
+- @gradio/textbox@0.6.0
+- @gradio/video@0.8.0
+- @gradio/file@0.7.0
+- @gradio/model3d@0.10.0
+- @gradio/simpleimage@0.5.0
+- @gradio/uploadbutton@0.6.1
+- @gradio/button@0.2.33
+- @gradio/dataset@0.1.33
+- @gradio/downloadbutton@0.1.10
+- @gradio/fileexplorer@0.4.1
+- @gradio/accordion@0.3.11
+- @gradio/checkbox@0.3.1
+- @gradio/checkboxgroup@0.5.1
+- @gradio/colorpicker@0.3.1
+- @gradio/column@0.1.1
+- @gradio/dropdown@0.7.1
+- @gradio/fallback@0.3.1
+- @gradio/form@0.1.16
+- @gradio/group@0.1.1
+- @gradio/html@0.2.1
+- @gradio/json@0.2.1
+- @gradio/label@0.3.1
+- @gradio/markdown@0.7.1
+- @gradio/number@0.4.1
+- @gradio/paramviewer@0.4.10
+- @gradio/plot@0.4.1
+- @gradio/radio@0.5.1
+- @gradio/row@0.1.2
+- @gradio/simpledropdown@0.2.1
+- @gradio/simpletextbox@0.2.1
+- @gradio/slider@0.4.1
+- @gradio/tabitem@0.2.8
+- @gradio/tabs@0.2.8
+- @gradio/box@0.1.16
+
+## 1.33.0
+
+### Highlights
+
+#### Setting File Upload Limits ([#7909](https://github.com/gradio-app/gradio/pull/7909) [`2afca65`](https://github.com/gradio-app/gradio/commit/2afca6541912b37dc84f447c7ad4af21607d7c72))
+
+We have added a `max_file_size` size parameter to `launch()` that limits to size of files uploaded to the server. This limit applies to each individual file. This parameter can be specified as a string or an integer (corresponding to the size in bytes).
+
+The following code snippet sets a max file size of 5 megabytes.
+
+```python
+import gradio as gr
+
+demo = gr.Interface(lambda x: x, "image", "image")
+
+demo.launch(max_file_size="5mb")
+# or
+demo.launch(max_file_size=5 * gr.FileSize.MB)
+```
+
+![max_file_size_upload](https://github.com/gradio-app/gradio/assets/41651716/7547330c-a082-4901-a291-3f150a197e45)
+
+
+#### Error states can now be cleared
+
+When a component encounters an error, the error state shown in the UI can now be cleared by clicking on the `x` icon in the top right of the component. This applies to all types of errors, whether it's raised in the UI or the server.
+
+![error_modal_calculator](https://github.com/gradio-app/gradio/assets/41651716/16cb071c-accd-45a6-9c18-0dea27d4bd98)
+
+ Thanks @freddyaboulton!
+
+### Features
+
+- [#8092](https://github.com/gradio-app/gradio/pull/8092) [`659d3c5`](https://github.com/gradio-app/gradio/commit/659d3c51ae8591b8c90879f17b2b10d1d79cb331) - chore(deps): update dependency iframe-resizer to v4.3.11.  Thanks @renovate!
+- [#8067](https://github.com/gradio-app/gradio/pull/8067) [`0fb058e`](https://github.com/gradio-app/gradio/commit/0fb058ec232bfaceb24f1515d16a41fa432a1ee8) - Fix the Lite custom element parser so it doesn't add the .code option when the entrypoint file is already specified.  Thanks @whitphx!
+- [#8051](https://github.com/gradio-app/gradio/pull/8051) [`d665f40`](https://github.com/gradio-app/gradio/commit/d665f409704b4938d57bee6476a2d000617643c8) - Fix custom JS function caller to concat the outputs of a dep to the inputs as the arguments.  Thanks @whitphx!
+- [#8056](https://github.com/gradio-app/gradio/pull/8056) [`2e469a5`](https://github.com/gradio-app/gradio/commit/2e469a5f99e52a5011a010f46e47dde7bb0c7140) - Using keys to preserve values between reloads.  Thanks @aliabid94!
+- [#7646](https://github.com/gradio-app/gradio/pull/7646) [`450b8cc`](https://github.com/gradio-app/gradio/commit/450b8cc898f130f15caa3742f65c17b9f7a8f398) - Refactor JS Client.  Thanks @hannahblair!
+- [#8115](https://github.com/gradio-app/gradio/pull/8115) [`595ebf7`](https://github.com/gradio-app/gradio/commit/595ebf74c5e09ad90fca0ca8a9a312f161a981aa) - Cache an error from app.submit() and show it on frontend.  Thanks @whitphx!
+- [#8084](https://github.com/gradio-app/gradio/pull/8084) [`1c99570`](https://github.com/gradio-app/gradio/commit/1c99570f3cbf28f020d6e92527754dd4cae3bcdb) - Adjust `View Api` container `z-index`.  Thanks @hannahblair!
+
+### Dependency updates
+
+- @gradio/atoms@0.7.1
+- @gradio/client@0.17.0
+- @gradio/audio@0.10.0
+- @gradio/label@0.3.0
+- @gradio/accordion@0.3.10
+- @gradio/annotatedimage@0.5.13
+- @gradio/button@0.2.32
+- @gradio/chatbot@0.9.0
+- @gradio/checkbox@0.3.0
+- @gradio/checkboxgroup@0.5.0
+- @gradio/code@0.6.0
+- @gradio/colorpicker@0.3.0
+- @gradio/column@0.1.1
+- @gradio/dataframe@0.7.0
+- @gradio/dataset@0.1.32
+- @gradio/downloadbutton@0.1.9
+- @gradio/dropdown@0.7.0
+- @gradio/fallback@0.3.0
+- @gradio/file@0.6.0
+- @gradio/fileexplorer@0.4.0
+- @gradio/form@0.1.15
+- @gradio/gallery@0.9.0
+- @gradio/group@0.1.1
+- @gradio/highlightedtext@0.5.0
+- @gradio/html@0.2.0
+- @gradio/image@0.10.0
+- @gradio/imageeditor@0.6.0
+- @gradio/json@0.2.0
+- @gradio/markdown@0.7.0
+- @gradio/model3d@0.9.0
+- @gradio/multimodaltextbox@0.3.0
+- @gradio/number@0.4.0
+- @gradio/paramviewer@0.4.9
+- @gradio/plot@0.4.0
+- @gradio/radio@0.5.0
+- @gradio/row@0.1.2
+- @gradio/simpledropdown@0.2.0
+- @gradio/simpleimage@0.4.0
+- @gradio/simpletextbox@0.2.0
+- @gradio/slider@0.4.0
+- @gradio/statustracker@0.5.0
+- @gradio/tabitem@0.2.7
+- @gradio/tabs@0.2.7
+- @gradio/textbox@0.5.0
+- @gradio/uploadbutton@0.6.0
+- @gradio/video@0.7.0
+- @gradio/upload@0.9.0
+- @gradio/utils@0.4.0
+- @gradio/box@0.1.15
+
 ## 1.32.0
 
 ### Features

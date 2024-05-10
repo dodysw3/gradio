@@ -5,6 +5,7 @@ import type {
 	Options,
 	GradioAppController
 } from "..";
+import { clean_indent } from "./indent";
 
 interface GradioComponentOptions {
 	info: Options["info"];
@@ -140,7 +141,12 @@ export function bootstrap_custom_element(
 				if (url != null) {
 					options.files[name] = { url };
 				} else {
-					options.files[name] = { data: fileElement.textContent ?? "" };
+					let data = fileElement.textContent ?? "";
+					if (name.endsWith(".py")) {
+						// Dedent the Python code.
+						data = clean_indent(data);
+					}
+					options.files[name] = { data };
 				}
 
 				if (entrypoint) {
@@ -151,24 +157,30 @@ export function bootstrap_custom_element(
 				}
 			}
 
-			const codeElements = this.getElementsByTagName("gradio-code");
-			if (codeElements.length === 0) {
-				// If there is no <gradio-code> element, try to parse the content of the custom element as code.
-				let code = "";
-				this.childNodes.forEach((node) => {
-					if (node.nodeType === Node.TEXT_NODE) {
-						code += node.textContent;
+			if (options.entrypoint == null) {
+				// If no entrypoint file is specified,
+				// try to find the source code to be passed to the .code option instead.
+
+				const codeElements = this.getElementsByTagName("gradio-code");
+				if (codeElements.length === 0) {
+					// If there is no <gradio-code> element, try to parse the content of the custom element as code.
+					let code = "";
+					this.childNodes.forEach((node) => {
+						if (node.nodeType === Node.TEXT_NODE) {
+							code += node.textContent;
+						}
+					});
+					options.code = code || undefined;
+				} else {
+					if (codeElements.length > 1) {
+						console.warn(
+							"Multiple <gradio-code> elements are found. Only the first one will be used."
+						);
 					}
-				});
-				options.code = code || undefined;
-			} else {
-				if (codeElements.length > 1) {
-					console.warn(
-						"Multiple <gradio-code> elements are found. Only the first one will be used."
-					);
+					const firstCodeElement = codeElements[0];
+					options.code = firstCodeElement?.textContent ?? undefined;
 				}
-				const firstCodeElement = codeElements[0];
-				options.code = firstCodeElement?.textContent ?? undefined;
+				options.code = options.code && clean_indent(options.code);
 			}
 
 			const requirementsElements = this.getElementsByTagName(

@@ -54,6 +54,7 @@
 	export let server: {
 		accept_blobs: (a: any) => void;
 	};
+	export let canvas_size: [number, number] | undefined;
 
 	export let gradio: Gradio<{
 		change: never;
@@ -66,6 +67,7 @@
 		clear: never;
 		select: SelectData;
 		share: ShareData;
+		clear_status: LoadingStatus;
 	}>;
 
 	let editor_instance: InteractiveImageEditor;
@@ -136,6 +138,7 @@
 			autoscroll={gradio.autoscroll}
 			i18n={gradio.i18n}
 			{...loading_status}
+			on:clear_status={() => gradio.dispatch("clear_status", loading_status)}
 		/>
 		<StaticImage
 			on:select={({ detail }) => gradio.dispatch("select", detail)}
@@ -169,9 +172,11 @@
 			autoscroll={gradio.autoscroll}
 			i18n={gradio.i18n}
 			{...loading_status}
+			on:clear_status={() => gradio.dispatch("clear_status", loading_status)}
 		/>
 
 		<InteractiveImageEditor
+			{canvas_size}
 			on:change={() => handle_history_change()}
 			bind:image_id
 			{crop_size}
@@ -196,11 +201,14 @@
 			{brush}
 			{eraser}
 			changeable={attached_events.includes("apply")}
+			realtime={attached_events.includes("change")}
 			i18n={gradio.i18n}
 			{transforms}
 			accept_blobs={server.accept_blobs}
 			{layers}
 			status={loading_status?.status}
+			upload={gradio.client.upload}
+			stream_handler={gradio.client.stream}
 		></InteractiveImageEditor>
 	</Block>
 {/if}
