@@ -29,7 +29,7 @@
 	export let root: string;
 	export let value_is_output = false;
 
-	export let height: number | undefined;
+	export let height: number | undefined = 450;
 	export let width: number | undefined;
 
 	export let _selectable = false;
@@ -44,6 +44,7 @@
 		"webcam"
 	];
 	export let interactive: boolean;
+	export let placeholder: string | undefined;
 
 	export let brush: Brush;
 	export let eraser: Eraser;
@@ -55,6 +56,7 @@
 		accept_blobs: (a: any) => void;
 	};
 	export let canvas_size: [number, number] | undefined;
+	export let show_fullscreen_button = true;
 
 	export let gradio: Gradio<{
 		change: never;
@@ -88,10 +90,14 @@
 	let dragging: boolean;
 
 	$: value && handle_change();
+	const is_browser = typeof window !== "undefined";
+	const raf = is_browser
+		? window.requestAnimationFrame
+		: (cb: (...args: any[]) => void) => cb();
 
 	function wait_for_next_frame(): Promise<void> {
 		return new Promise((resolve) => {
-			requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+			raf(() => raf(() => resolve()));
 		});
 	}
 
@@ -117,6 +123,8 @@
 			tick().then((_) => (value_is_output = false));
 		}
 	}
+
+	$: has_value = value?.background || value?.layers?.length || value?.composite;
 </script>
 
 {#if !interactive}
@@ -151,12 +159,13 @@
 			selectable={_selectable}
 			{show_share_button}
 			i18n={gradio.i18n}
+			{show_fullscreen_button}
 		/>
 	</Block>
 {:else}
 	<Block
 		{visible}
-		variant={value === null ? "dashed" : "solid"}
+		variant={has_value ? "solid" : "dashed"}
 		border_mode={dragging ? "focus" : "base"}
 		padding={false}
 		{elem_id}
@@ -176,6 +185,7 @@
 		/>
 
 		<InteractiveImageEditor
+			bind:dragging
 			{canvas_size}
 			on:change={() => handle_history_change()}
 			bind:image_id
@@ -186,6 +196,7 @@
 			{sources}
 			{label}
 			{show_label}
+			{height}
 			on:save={(e) => handle_save()}
 			on:edit={() => gradio.dispatch("edit")}
 			on:clear={() => gradio.dispatch("clear")}
@@ -207,8 +218,9 @@
 			accept_blobs={server.accept_blobs}
 			{layers}
 			status={loading_status?.status}
-			upload={gradio.client.upload}
-			stream_handler={gradio.client.stream}
+			upload={(...args) => gradio.client.upload(...args)}
+			stream_handler={(...args) => gradio.client.stream(...args)}
+			{placeholder}
 		></InteractiveImageEditor>
 	</Block>
 {/if}

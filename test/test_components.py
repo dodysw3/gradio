@@ -11,15 +11,14 @@ import gradio as gr
 from gradio import processing_utils
 from gradio.components.base import Component
 from gradio.data_classes import GradioModel, GradioRootModel
+from gradio.templates import TextArea
 
 os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
 
 
 class TestGettingComponents:
     def test_component_function(self):
-        assert isinstance(
-            gr.components.component("textarea", render=False), gr.templates.TextArea
-        )
+        assert isinstance(gr.components.component("textarea", render=False), TextArea)
 
     @pytest.mark.parametrize(
         "component, render, unrender, should_be_rendered",
@@ -102,6 +101,11 @@ def test_constructor_args():
 
 
 def test_template_component_configs(io_components):
+    """
+    This test ensures that every "template" (the classes defined in gradio/template.py)
+    has all of the arguments that its parent class has. E.g. the constructor of the `Sketchpad`
+    class should have all of the arguments that the constructor of `ImageEditor` has
+    """
     template_components = [c for c in io_components if getattr(c, "is_template", False)]
     for component in template_components:
         component_parent_class = inspect.getmro(component)[1]
@@ -125,8 +129,10 @@ def test_component_example_payloads(io_components):
     for component in io_components:
         if component == PDF:
             continue
-        elif component in [gr.BarPlot, gr.LinePlot, gr.ScatterPlot]:
+        elif issubclass(component, gr.components.NativePlot):
             c: Component = component(x="x", y="y")
+        elif component == gr.FileExplorer:
+            c: Component = component(root_dir="gradio")
         else:
             c: Component = component()
         data = c.example_payload()
@@ -141,4 +147,4 @@ def test_component_example_payloads(io_components):
                 data = c.data_model(**data)  # type: ignore
             elif issubclass(c.data_model, GradioRootModel):  # type: ignore
                 data = c.data_model(root=data)  # type: ignore
-        c.preprocess(data)
+        c.preprocess(data)  # type: ignore

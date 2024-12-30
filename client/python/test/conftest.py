@@ -242,7 +242,7 @@ def count_generator_no_api():
 def count_generator_demo_exception():
     def count(n):
         for i in range(int(n)):
-            time.sleep(0.1)
+            time.sleep(0.01)
             if i == 5:
                 raise ValueError("Oh no!")
             yield i
@@ -255,12 +255,10 @@ def count_generator_demo_exception():
             num = gr.Number(value=10)
             with gr.Row():
                 count_btn = gr.Button("Count")
-                count_forever = gr.Button("Count forever")
         with gr.Column():
             out = gr.Textbox()
 
         count_btn.click(count, num, out, api_name="count")
-        count_forever.click(show, num, out, api_name="count_forever", every=3)
     return demo
 
 
@@ -457,5 +455,28 @@ def max_file_size_demo():
         file_1b.upload(
             lambda x: "Upload successful", file_1b, upload_status, api_name="upload_1b"
         )
+
+    return demo
+
+
+@pytest.fixture
+def chatbot_message_format():
+    with gr.Blocks() as demo:
+        chatbot = gr.Chatbot(type="messages")
+        msg = gr.Textbox()
+
+        def respond(message, chat_history: list):
+            bot_message = random.choice(
+                ["How are you?", "I love you", "I'm very hungry"]
+            )
+            chat_history.extend(
+                [
+                    {"role": "user", "content": message},
+                    {"role": "assistant", "content": bot_message},
+                ]
+            )
+            return "", chat_history
+
+        msg.submit(respond, [msg, chatbot], [msg, chatbot], api_name="chat")
 
     return demo

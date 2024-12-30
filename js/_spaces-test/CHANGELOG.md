@@ -1,4 +1,158 @@
-# @gradio/spaces-test
+# @self/spaces-test
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.8.0
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.7.1
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.7.0
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.6.0-beta.4
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.6.0-beta.3
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.6.0-beta.2
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.6.0-beta.1
+- @gradio/theme@0.3.0-beta.1
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.5.1
+- @gradio/theme@0.2.4
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.5.0
+- @gradio/form@0.1.23
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/form@0.1.22
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.4.0
+- @gradio/form@0.1.21
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.3.0
+- @gradio/form@0.1.20
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.2.1
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.2.0
+- @gradio/form@0.1.19
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.1.1
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.1.0
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@1.0.0
+- @gradio/form@0.1.18
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@0.20.1
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@0.20.0
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/theme@0.2.3
+- @gradio/client@0.19.4
+- @gradio/form@0.1.18
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@0.19.3
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@0.19.2
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@0.19.1
+
+## 0.0.1
+
+### Dependency updates
+
+- @gradio/client@0.19.0
+- @gradio/form@0.1.17
 
 ## 0.0.1
 

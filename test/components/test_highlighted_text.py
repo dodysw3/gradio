@@ -21,7 +21,8 @@ class TestHighlightedText:
             {"token": "Berlin", "class_or_confidence": "LOC"},
             {"token": "", "class_or_confidence": None},
         ]
-        result_ = component.postprocess(value).model_dump()
+        assert (result_ := component.postprocess(value))
+        result_ = result_.model_dump()
         assert result == result_
 
         text = "Wolfgang lives in Berlin"
@@ -29,9 +30,8 @@ class TestHighlightedText:
             {"entity": "PER", "start": 0, "end": 8},
             {"entity": "LOC", "start": 18, "end": 24},
         ]
-        result_ = component.postprocess(
-            {"text": text, "entities": entities}
-        ).model_dump()
+        assert (result_ := component.postprocess({"text": text, "entities": entities}))
+        result_ = result_.model_dump()
         assert result == result_
 
         text = "Wolfgang lives in Berlin"
@@ -39,9 +39,8 @@ class TestHighlightedText:
             {"entity_group": "PER", "start": 0, "end": 8},
             {"entity": "LOC", "start": 18, "end": 24},
         ]
-        result_ = component.postprocess(
-            {"text": text, "entities": entities}
-        ).model_dump()
+        assert (result_ := component.postprocess({"text": text, "entities": entities}))
+        result_ = result_.model_dump()
         assert result == result_
 
         # Test split entity is merged when combine adjacent is set
@@ -58,16 +57,14 @@ class TestHighlightedText:
             {"token": " lives in ", "class_or_confidence": None},
             {"token": "Berlin", "class_or_confidence": "LOC"},
         ]
-        result_ = component.postprocess(
-            {"text": text, "entities": entities}
-        ).model_dump()
+        assert (result_ := component.postprocess({"text": text, "entities": entities}))
+        result_ = result_.model_dump()
         assert result != result_
         assert result_after_merge != result_
 
         component = gr.HighlightedText(combine_adjacent=True)
-        result_ = component.postprocess(
-            {"text": text, "entities": entities}
-        ).model_dump()
+        assert (result_ := component.postprocess({"text": text, "entities": entities}))
+        result_ = result_.model_dump()
         assert result_after_merge == result_
 
         component = gr.HighlightedText()
@@ -77,30 +74,27 @@ class TestHighlightedText:
             {"entity": "LOC", "start": 18, "end": 24},
             {"entity": "PER", "start": 0, "end": 8},
         ]
-        result_ = component.postprocess(
-            {"text": text, "entities": entities}
-        ).model_dump()
+        assert (result_ := component.postprocess({"text": text, "entities": entities}))
+        result_ = result_.model_dump()
         assert result == result_
 
         text = "I live there"
         entities = []
-        result_ = component.postprocess(
-            {"text": text, "entities": entities}
-        ).model_dump()
-        assert [{"token": text, "class_or_confidence": None}] == result_
+        assert (result_ := component.postprocess({"text": text, "entities": entities}))
+        result_ = result_.model_dump()
+        assert result_ == [{"token": text, "class_or_confidence": None}]
 
         text = "Wolfgang"
         entities = [
             {"entity": "PER", "start": 0, "end": 8},
         ]
-        result_ = component.postprocess(
-            {"text": text, "entities": entities}
-        ).model_dump()
-        assert [
+        assert (result_ := component.postprocess({"text": text, "entities": entities}))
+        result_ = result_.model_dump()
+        assert result_ == [
             {"token": "", "class_or_confidence": None},
             {"token": text, "class_or_confidence": "PER"},
             {"token": "", "class_or_confidence": None},
-        ] == result_
+        ]
 
     def test_component_functions(self):
         """
@@ -113,6 +107,7 @@ class TestHighlightedText:
             "show_label": True,
             "label": None,
             "show_legend": False,
+            "show_inline_category": True,
             "container": True,
             "min_width": 160,
             "scale": None,

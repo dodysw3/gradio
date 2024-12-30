@@ -25,6 +25,7 @@
 	import { Tools, Crop, Brush, Sources } from "./tools";
 	import { BlockLabel } from "@gradio/atoms";
 	import { Image as ImageIcon } from "@gradio/icons";
+	import { inject } from "./utils/parse_placeholder";
 
 	export let brush: IBrush | null;
 	export let eraser: Eraser | null;
@@ -43,11 +44,19 @@
 	export let transforms: "crop"[] = ["crop"];
 	export let layers: boolean;
 	export let accept_blobs: (a: any) => void;
-	export let status: "pending" | "complete" | "error" = "complete";
+	export let status:
+		| "pending"
+		| "complete"
+		| "error"
+		| "generating"
+		| "streaming" = "complete";
 	export let canvas_size: [number, number] | undefined;
 	export let realtime: boolean;
 	export let upload: Client["upload"];
 	export let stream_handler: Client["stream"];
+	export let dragging: boolean;
+	export let placeholder: string | undefined = undefined;
+	export let height = 450;
 
 	const dispatch = createEventDispatcher<{
 		clear?: never;
@@ -195,7 +204,9 @@
 	}
 
 	let active_mode: "webcam" | "color" | null = null;
-	let editor_height = 0;
+	let editor_height = height - 100;
+
+	$: [heading, paragraph] = placeholder ? inject(placeholder) : [false, false];
 </script>
 
 <BlockLabel
@@ -208,6 +219,7 @@
 	crop_size={Array.isArray(crop_size) ? crop_size : undefined}
 	bind:this={editor}
 	bind:height={editor_height}
+	parent_height={height}
 	{changeable}
 	on:save
 	on:change={handle_change}
@@ -221,6 +233,7 @@
 		<Layers layer_files={value?.layers || null} enable_layers={layers} />
 
 		<Sources
+			bind:dragging
 			{i18n}
 			{root}
 			{sources}
@@ -229,6 +242,7 @@
 			bind:bg
 			bind:active_mode
 			background_file={value?.background || value?.composite || null}
+			max_height={height}
 		></Sources>
 
 		{#if transforms.includes("crop")}
@@ -252,13 +266,22 @@
 	{#if !bg && !history && active_mode !== "webcam" && status !== "error"}
 		<div class="empty wrap" style:height={`${editor_height}px`}>
 			{#if sources && sources.length}
-				<div>Upload an image</div>
+				{#if heading || paragraph}
+					{#if heading}
+						<h2>{heading}</h2>
+					{/if}
+					{#if paragraph}
+						<p>{paragraph}</p>
+					{/if}
+				{:else}
+					<div>Upload an image</div>
+				{/if}
 			{/if}
 
-			{#if sources && sources.length && brush}
+			{#if sources && sources.length && brush && !placeholder}
 				<div class="or">or</div>
 			{/if}
-			{#if brush}
+			{#if brush && !placeholder}
 				<div>select the draw tool to start</div>
 			{/if}
 		</div>
@@ -266,6 +289,15 @@
 </ImageEditor>
 
 <style>
+	h2 {
+		font-size: var(--text-xl);
+	}
+
+	p,
+	h2 {
+		white-space: pre-line;
+	}
+
 	.empty {
 		display: flex;
 		flex-direction: column;
@@ -290,7 +322,7 @@
 		align-items: center;
 		color: var(--block-label-text-color);
 		line-height: var(--line-md);
-		font-size: var(--text-lg);
+		font-size: var(--text-md);
 		pointer-events: none;
 	}
 

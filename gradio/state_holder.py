@@ -4,8 +4,9 @@ import datetime
 import os
 import threading
 from collections import OrderedDict
+from collections.abc import Iterator
 from copy import copy, deepcopy
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from gradio.blocks import Blocks
@@ -21,6 +22,7 @@ class StateHolder:
 
     def set_blocks(self, blocks: Blocks):
         self.blocks = blocks
+        blocks.state_holder = self
         self.capacity = blocks.state_session_capacity
 
     def reset(self, blocks: Blocks):

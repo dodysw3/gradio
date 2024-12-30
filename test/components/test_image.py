@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import cast
 
 import numpy as np
@@ -7,7 +8,8 @@ from gradio_client import media_data
 from gradio_client import utils as client_utils
 
 import gradio as gr
-from gradio.data_classes import FileData
+from gradio.components.image import ImageData  # type: ignore
+from gradio.exceptions import Error
 
 
 class TestImage:
@@ -17,7 +19,7 @@ class TestImage:
         type: pil, file, filepath, numpy
         """
 
-        img = FileData(path="test/test_files/bus.png")
+        img = ImageData(path="test/test_files/bus.png", orig_name="bus.png")
         image_input = gr.Image()
 
         image_input = gr.Image(type="filepath")
@@ -33,6 +35,7 @@ class TestImage:
             "name": "image",
             "show_share_button": False,
             "show_download_button": True,
+            "show_fullscreen_button": True,
             "streaming": False,
             "show_label": True,
             "label": "Upload Your Image",
@@ -53,27 +56,34 @@ class TestImage:
             "key": None,
             "streamable": False,
             "type": "pil",
+            "placeholder": None,
+            "webcam_constraints": None,
         }
         assert image_input.preprocess(None) is None
         image_input = gr.Image()
         assert image_input.preprocess(img) is not None
         image_input.preprocess(img)
-        file_image = gr.Image(type="filepath")
-        assert isinstance(file_image.preprocess(img), str)
+        file_image = gr.Image(type="filepath", image_mode=None)
+        assert Path(img.path).name == Path(str(file_image.preprocess(img))).name  # type: ignore
         with pytest.raises(ValueError):
-            gr.Image(type="unknown")
+            gr.Image(type="unknown")  # type: ignore
+
+        with pytest.raises(Error):
+            gr.Image().preprocess(
+                ImageData(path="test/test_files/test.svg", orig_name="test.svg")
+            )
 
         string_source = gr.Image(sources="upload")
         assert string_source.sources == ["upload"]
         # Output functionalities
         image_output = gr.Image(type="pil")
         processed_image = image_output.postprocess(
-            PIL.Image.open(img.path)
-        ).model_dump()
+            PIL.Image.open(img.path)  # type: ignore
+        ).model_dump()  # type: ignore
         assert processed_image is not None
         if processed_image is not None:
-            processed = PIL.Image.open(cast(dict, processed_image).get("path", ""))
-            source = PIL.Image.open(img.path)
+            processed = PIL.Image.open(cast(dict, processed_image).get("path", ""))  # type: ignore
+            source = PIL.Image.open(img.path)  # type: ignore
             assert processed.size == source.size
 
     def test_in_interface_as_output(self):
@@ -101,25 +111,33 @@ class TestImage:
     def test_images_upright_after_preprocess(self):
         component = gr.Image(type="pil")
         file_path = "test/test_files/rotated_image.jpeg"
-        im = PIL.Image.open(file_path)
+        im = PIL.Image.open(file_path)  # type: ignore
         assert im.getexif().get(274) != 1
-        image = component.preprocess(FileData(path=file_path))
-        assert image == PIL.ImageOps.exif_transpose(im)
+        image = component.preprocess(ImageData(path=file_path))
+        assert image == PIL.ImageOps.exif_transpose(im)  # type: ignore
 
     def test_image_format_parameter(self):
         component = gr.Image(type="filepath", format="jpeg")
         file_path = "test/test_files/bus.png"
-        image = component.postprocess(file_path)
-        assert image.path.endswith("png")
-        image = component.postprocess(
-            np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+        assert (image := component.postprocess(file_path))
+        assert image.path.endswith("png")  # type: ignore
+        assert (
+            image := component.postprocess(
+                np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+            )
         )
-        assert image.path.endswith("jpeg")
+        assert image.path.endswith("jpeg")  # type: ignore
 
-        image_pre = component.preprocess(FileData(path=file_path))
-        assert image_pre.endswith("webp")
+        assert (
+            image_pre := component.preprocess(
+                ImageData(path=file_path, orig_name="bus.png")
+            )
+        )
+        assert isinstance(image_pre, str)
+        assert image_pre.endswith("png")
 
         image_pre = component.preprocess(
-            FileData(path="test/test_files/cheetah1.jpg", orig_name="cheetah1.jpg")
+            ImageData(path="test/test_files/cheetah1.jpg", orig_name="cheetah1.jpg")
         )
-        assert image_pre.endswith("jpeg")
+        assert isinstance(image_pre, str)
+        assert image_pre.endswith("jpg")

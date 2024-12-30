@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 import time
 import warnings
-from typing import Literal
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Literal
 
 from gradio_client.documentation import document
 
-from gradio.components import Button
-from gradio.context import Context
+from gradio.components import Button, Component
+from gradio.context import get_blocks_context
 from gradio.routes import Request
+
+if TYPE_CHECKING:
+    from gradio.components import Timer
 
 
 @document()
@@ -27,8 +31,9 @@ class LoginButton(Button):
         value: str = "Sign in with Hugging Face",
         logout_value: str = "Logout ({})",
         *,
-        every: float | None = None,
-        variant: Literal["primary", "secondary", "stop"] = "secondary",
+        every: Timer | float | None = None,
+        inputs: Component | Sequence[Component] | set[Component] | None = None,
+        variant: Literal["primary", "secondary", "stop", "huggingface"] = "huggingface",
         size: Literal["sm", "lg"] | None = None,
         icon: str
         | None = "https://huggingface.co/front/assets/huggingface_logo-noborder.svg",
@@ -39,22 +44,18 @@ class LoginButton(Button):
         elem_classes: list[str] | str | None = None,
         render: bool = True,
         key: int | str | None = None,
-        scale: int | None = 0,
+        scale: int | None = None,
         min_width: int | None = None,
-        signed_in_value: str = "Signed in as {}",
     ):
         """
         Parameters:
             logout_value: The text to display when the user is signed in. The string should contain a placeholder for the username with a call-to-action to logout, e.g. "Logout ({})".
         """
-        if signed_in_value != "Signed in as {}":
-            warnings.warn(
-                "The `signed_in_value` parameter is deprecated. Please use `logout_value` instead."
-            )
         self.logout_value = logout_value
         super().__init__(
             value,
             every=every,
+            inputs=inputs,
             variant=variant,
             size=size,
             icon=icon,
@@ -68,7 +69,7 @@ class LoginButton(Button):
             scale=scale,
             min_width=min_width,
         )
-        if Context.root_block:
+        if get_blocks_context():
             self.activate()
         else:
             warnings.warn(

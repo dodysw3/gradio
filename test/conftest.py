@@ -29,7 +29,7 @@ def io_components():
             gr.components.FormComponent,
             gr.State,
             gr.LoginButton,
-            gr.LogoutButton,
+            gr.Timer,
         ]:
             continue
         if subclass in gr.components.FormComponent.__subclasses__():
@@ -44,13 +44,13 @@ def io_components():
 @pytest.fixture
 def connect():
     @contextmanager
-    def _connect(demo: gr.Blocks, serialize=True, **kwargs):
+    def _connect(demo: gr.Blocks, **kwargs):
         _, local_url, _ = demo.launch(prevent_thread_lock=True, **kwargs)
         try:
-            client = Client(local_url, serialize=serialize)
+            client = Client(local_url)
             yield client
         finally:
-            client.close()
+            client.close()  # type: ignore
             demo.close()
 
     return _connect

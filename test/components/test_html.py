@@ -10,7 +10,7 @@ class TestHTML:
         assert html_component.get_config() == {
             "value": "#Welcome onboard",
             "label": "HTML Input",
-            "show_label": True,
+            "show_label": False,
             "visible": True,
             "elem_id": None,
             "elem_classes": [],
@@ -18,6 +18,10 @@ class TestHTML:
             "name": "html",
             "_selectable": False,
             "key": None,
+            "min_height": None,
+            "max_height": None,
+            "container": False,
+            "padding": True,
         }
 
     def test_in_interface(self):

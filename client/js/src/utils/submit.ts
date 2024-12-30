@@ -2,32 +2,42 @@
 import type {
 	Status,
 	Payload,
-	EventType,
-	ListenerMap,
-	SubmitReturn,
-	EventListener,
-	Event,
+	GradioEvent,
 	JsApiData,
 	EndpointInfo,
 	ApiInfo,
 	Config,
-	Dependency
+	Dependency,
+	SubmitIterable
 } from "../types";
 
-import { skip_queue, post_message } from "../helpers/data";
+import { skip_queue, post_message, handle_payload } from "../helpers/data";
 import { resolve_root } from "../helpers/init_helpers";
-import { handle_message, process_endpoint } from "../helpers/api_info";
-import { BROKEN_CONNECTION_MSG, QUEUE_FULL_MSG } from "../constants";
+import {
+	handle_message,
+	map_data_to_params,
+	process_endpoint
+} from "../helpers/api_info";
+import semiver from "semiver";
+import {
+	BROKEN_CONNECTION_MSG,
+	QUEUE_FULL_MSG,
+	SSE_URL,
+	SSE_DATA_URL,
+	RESET_URL,
+	CANCEL_URL
+} from "../constants";
 import { apply_diff_stream, close_stream } from "./stream";
 import { Client } from "../client";
 
 export function submit(
 	this: Client,
 	endpoint: string | number,
-	data: unknown[],
+	data: unknown[] | Record<string, unknown> = {},
 	event_data?: unknown,
-	trigger_id?: number | null
-): SubmitReturn {
+	trigger_id?: number | null,
+	all_events?: boolean
+): SubmitIterable<GradioEvent> {
 	try {
 		const { hf_token } = this.options;
 		const {
@@ -42,8 +52,12 @@ export function submit(
 			pending_diff_streams,
 			event_callbacks,
 			unclosed_events,
-			post_data
+			post_data,
+			options,
+			api_prefix
 		} = this;
+
+		const that = this;
 
 		if (!api_info) throw new Error("No API found");
 		if (!config) throw new Error("Could not resolve app config");
@@ -55,49 +69,38 @@ export function submit(
 			config
 		);
 
+		let resolved_data = map_data_to_params(data, endpoint_info);
+
 		let websocket: WebSocket;
 		let stream: EventSource | null;
 		let protocol = config.protocol ?? "ws";
+		let event_id_final = "";
+		let event_id_cb: () => string = () => event_id_final;
 
 		const _endpoint = typeof endpoint === "number" ? "/predict" : endpoint;
 		let payload: Payload;
 		let event_id: string | null = null;
 		let complete: Status | undefined | false = false;
-		const listener_map: ListenerMap<EventType> = {};
 		let last_status: Record<string, Status["stage"]> = {};
 		let url_params =
-			typeof window !== "undefined"
+			typeof window !== "undefined" && typeof document !== "undefined"
 				? new URLSearchParams(window.location.search).toString()
 				: "";
 
+		const events_to_publish =
+			options?.events?.reduce(
+				(acc, event) => {
+					acc[event] = true;
+					return acc;
+				},
+				{} as Record<string, boolean>
+			) || {};
+
 		// event subscription methods
-		function fire_event<K extends EventType>(event: Event<K>): void {
-			const narrowed_listener_map: ListenerMap<K> = listener_map;
-			const listeners = narrowed_listener_map[event.type] || [];
-			listeners?.forEach((l) => l(event));
-		}
-
-		function on<K extends EventType>(
-			eventType: K,
-			listener: EventListener<K>
-		): SubmitReturn {
-			const narrowed_listener_map: ListenerMap<K> = listener_map;
-			const listeners = narrowed_listener_map[eventType] || [];
-			narrowed_listener_map[eventType] = listeners;
-			listeners?.push(listener);
-
-			return { on, off, cancel, destroy };
-		}
-
-		function off<K extends EventType>(
-			eventType: K,
-			listener: EventListener<K>
-		): SubmitReturn {
-			const narrowed_listener_map: ListenerMap<K> = listener_map;
-			let listeners = narrowed_listener_map[eventType] || [];
-			listeners = listeners?.filter((l) => l !== listener);
-			narrowed_listener_map[eventType] = listeners;
-			return { on, off, cancel, destroy };
+		function fire_event(event: GradioEvent): void {
+			if (all_events || events_to_publish[event.type]) {
+				push_event(event);
+			}
 		}
 
 		async function cancel(): Promise<void> {
@@ -114,6 +117,7 @@ export function submit(
 				fn_index: fn_index
 			});
 
+			let reset_request = {};
 			let cancel_request = {};
 			if (protocol === "ws") {
 				if (websocket && websocket.readyState === 0) {
@@ -123,10 +127,12 @@ export function submit(
 				} else {
 					websocket.close();
 				}
-				cancel_request = { fn_index, session_hash };
+				reset_request = { fn_index, session_hash };
 			} else {
-				stream?.close();
-				cancel_request = { event_id };
+				close_stream(stream_status, that.abort_controller);
+				close();
+				reset_request = { event_id };
+				cancel_request = { event_id, session_hash, fn_index };
 			}
 
 			try {
@@ -134,10 +140,18 @@ export function submit(
 					throw new Error("Could not resolve app config");
 				}
 
-				await fetch(`${config.root}/reset`, {
+				if ("event_id" in cancel_request) {
+					await fetch(`${config.root}${api_prefix}/${CANCEL_URL}`, {
+						headers: { "Content-Type": "application/json" },
+						method: "POST",
+						body: JSON.stringify(cancel_request)
+					});
+				}
+
+				await fetch(`${config.root}${api_prefix}/${RESET_URL}`, {
 					headers: { "Content-Type": "application/json" },
 					method: "POST",
-					body: JSON.stringify(cancel_request)
+					body: JSON.stringify(reset_request)
 				});
 			} catch (e) {
 				console.warn(
@@ -146,19 +160,46 @@ export function submit(
 			}
 		}
 
-		function destroy(): void {
-			for (const event_type in listener_map) {
-				listener_map &&
-					listener_map[event_type as "data" | "status"]?.forEach((fn) => {
-						off(event_type as "data" | "status", fn);
-					});
-			}
+		const resolve_heartbeat = async (config: Config): Promise<void> => {
+			await this._resolve_hearbeat(config);
+		};
+
+		async function handle_render_config(render_config: any): Promise<void> {
+			if (!config) return;
+			let render_id: number = render_config.render_id;
+			config.components = [
+				...config.components.filter((c) => c.props.rendered_in !== render_id),
+				...render_config.components
+			];
+			config.dependencies = [
+				...config.dependencies.filter((d) => d.rendered_in !== render_id),
+				...render_config.dependencies
+			];
+			const any_state = config.components.some((c) => c.type === "state");
+			const any_unload = config.dependencies.some((d) =>
+				d.targets.some((t) => t[1] === "unload")
+			);
+			config.connect_heartbeat = any_state || any_unload;
+			await resolve_heartbeat(config);
+			fire_event({
+				type: "render",
+				data: render_config,
+				endpoint: _endpoint,
+				fn_index
+			});
 		}
 
-		this.handle_blob(config.root, data, endpoint_info).then(
+		this.handle_blob(config.root, resolved_data, endpoint_info).then(
 			async (_payload) => {
+				let input_data = handle_payload(
+					_payload,
+					dependency,
+					config.components,
+					"input",
+					true
+				);
 				payload = {
-					data: _payload || [],
+					data: input_data || [],
 					event_data,
 					fn_index,
 					trigger_id
@@ -174,7 +215,7 @@ export function submit(
 					});
 
 					post_data(
-						`${config.root}/run${
+						`${config.root}${api_prefix}/run${
 							_endpoint.startsWith("/") ? _endpoint : `/${_endpoint}`
 						}${url_params ? "?" + url_params : ""}`,
 						{
@@ -189,11 +230,20 @@ export function submit(
 									type: "data",
 									endpoint: _endpoint,
 									fn_index,
-									data: data,
+									data: handle_payload(
+										data,
+										dependency,
+										config.components,
+										"output",
+										options.with_null_state
+									),
 									time: new Date(),
 									event_data,
 									trigger_id
 								});
+								if (output.render_config) {
+									handle_render_config(output.render_config);
+								}
 
 								fire_event({
 									type: "status",
@@ -300,9 +350,12 @@ export function submit(
 						} else if (type === "log") {
 							fire_event({
 								type: "log",
+								title: data.title,
 								log: data.log,
 								level: data.level,
 								endpoint: _endpoint,
+								duration: data.duration,
+								visible: data.visible,
 								fn_index
 							});
 						} else if (type === "generating") {
@@ -320,7 +373,13 @@ export function submit(
 							fire_event({
 								type: "data",
 								time: new Date(),
-								data: data.data,
+								data: handle_payload(
+									data.data,
+									dependency,
+									config.components,
+									"output",
+									options.with_null_state
+								),
 								endpoint: _endpoint,
 								fn_index,
 								event_data,
@@ -363,7 +422,7 @@ export function submit(
 						session_hash: session_hash
 					}).toString();
 					let url = new URL(
-						`${config.root}/queue/join?${
+						`${config.root}${api_prefix}/${SSE_URL}?${
 							url_params ? url_params + "&" : ""
 						}${params}`
 					);
@@ -372,7 +431,7 @@ export function submit(
 						url.searchParams.set("__sign", this.jwt);
 					}
 
-					stream = await this.stream(url);
+					stream = this.stream(url);
 
 					if (!stream) {
 						return Promise.reject(
@@ -398,14 +457,17 @@ export function submit(
 							});
 							if (status.stage === "error") {
 								stream?.close();
+								close();
 							}
 						} else if (type === "data") {
-							event_id = _data.event_id as string;
-							let [_, status] = await post_data(`${config.root}/queue/data`, {
-								...payload,
-								session_hash,
-								event_id
-							});
+							let [_, status] = await post_data(
+								`${config.root}${api_prefix}/queue/data`,
+								{
+									...payload,
+									session_hash,
+									event_id
+								}
+							);
 							if (status !== 200) {
 								fire_event({
 									type: "status",
@@ -417,18 +479,22 @@ export function submit(
 									time: new Date()
 								});
 								stream?.close();
+								close();
 							}
 						} else if (type === "complete") {
 							complete = status;
 						} else if (type === "log") {
 							fire_event({
 								type: "log",
+								title: data.title,
 								log: data.log,
 								level: data.level,
 								endpoint: _endpoint,
+								duration: data.duration,
+								visible: data.visible,
 								fn_index
 							});
-						} else if (type === "generating") {
+						} else if (type === "generating" || type === "streaming") {
 							fire_event({
 								type: "status",
 								time: new Date(),
@@ -443,7 +509,13 @@ export function submit(
 							fire_event({
 								type: "data",
 								time: new Date(),
-								data: data.data,
+								data: handle_payload(
+									data.data,
+									dependency,
+									config.components,
+									"output",
+									options.with_null_state
+								),
 								endpoint: _endpoint,
 								fn_index,
 								event_data,
@@ -461,6 +533,7 @@ export function submit(
 									fn_index
 								});
 								stream?.close();
+								close();
 							}
 						}
 					};
@@ -481,7 +554,10 @@ export function submit(
 						time: new Date()
 					});
 					let hostname = "";
-					if (typeof window !== "undefined") {
+					if (
+						typeof window !== "undefined" &&
+						typeof document !== "undefined"
+					) {
 						hostname = window?.location?.hostname;
 					}
 
@@ -489,13 +565,19 @@ export function submit(
 					const origin = hostname.includes(".dev.")
 						? `https://moon-${hostname.split(".")[1]}.${hfhubdev}`
 						: `https://huggingface.co`;
+
+					const is_iframe =
+						typeof window !== "undefined" &&
+						typeof document !== "undefined" &&
+						window.parent != window;
+					const is_zerogpu_space = dependency.zerogpu && config.space_id;
 					const zerogpu_auth_promise =
-						dependency.zerogpu && window.parent != window && config.space_id
+						is_iframe && is_zerogpu_space
 							? post_message<Headers>("zerogpu-headers", origin)
 							: Promise.resolve(null);
 					const post_data_promise = zerogpu_auth_promise.then((headers) => {
 						return post_data(
-							`${config.root}/queue/join?${url_params}`,
+							`${config.root}${api_prefix}/${SSE_DATA_URL}?${url_params}`,
 							{
 								...payload,
 								session_hash
@@ -526,9 +608,10 @@ export function submit(
 							});
 						} else {
 							event_id = response.event_id as string;
+							event_id_final = event_id;
 							let callback = async function (_data: object): Promise<void> {
 								try {
-									const { type, status, data } = handle_message(
+									const { type, status, data, original_msg } = handle_message(
 										_data,
 										last_status[fn_index]
 									);
@@ -544,6 +627,7 @@ export function submit(
 											endpoint: _endpoint,
 											fn_index,
 											time: new Date(),
+											original_msg: original_msg,
 											...status
 										});
 									} else if (type === "complete") {
@@ -563,13 +647,16 @@ export function submit(
 									} else if (type === "log") {
 										fire_event({
 											type: "log",
+											title: data.title,
 											log: data.log,
 											level: data.level,
 											endpoint: _endpoint,
+											duration: data.duration,
+											visible: data.visible,
 											fn_index
 										});
 										return;
-									} else if (type === "generating") {
+									} else if (type === "generating" || type === "streaming") {
 										fire_event({
 											type: "status",
 											time: new Date(),
@@ -581,6 +668,7 @@ export function submit(
 										});
 										if (
 											data &&
+											dependency.connection !== "stream" &&
 											["sse_v2", "sse_v2.1", "sse_v3"].includes(protocol)
 										) {
 											apply_diff_stream(pending_diff_streams, event_id!, data);
@@ -590,17 +678,18 @@ export function submit(
 										fire_event({
 											type: "data",
 											time: new Date(),
-											data: data.data,
+											data: handle_payload(
+												data.data,
+												dependency,
+												config.components,
+												"output",
+												options.with_null_state
+											),
 											endpoint: _endpoint,
 											fn_index
 										});
 										if (data.render_config) {
-											fire_event({
-												type: "render",
-												data: data.render_config,
-												endpoint: _endpoint,
-												fn_index
-											});
+											await handle_render_config(data.render_config);
 										}
 
 										if (complete) {
@@ -613,6 +702,8 @@ export function submit(
 												endpoint: _endpoint,
 												fn_index
 											});
+
+											close();
 										}
 									}
 
@@ -638,9 +729,10 @@ export function submit(
 										fn_index,
 										time: new Date()
 									});
-									if (["sse_v2", "sse_v2.1"].includes(protocol)) {
-										close_stream(stream_status, stream);
+									if (["sse_v2", "sse_v2.1", "sse_v3"].includes(protocol)) {
+										close_stream(stream_status, that.abort_controller);
 										stream_status.open = false;
+										close();
 									}
 								}
 							};
@@ -663,11 +755,77 @@ export function submit(
 			}
 		);
 
-		return { on, off, cancel, destroy };
+		let done = false;
+		const values: (IteratorResult<GradioEvent> | PromiseLike<never>)[] = [];
+		const resolvers: ((
+			value: IteratorResult<GradioEvent> | PromiseLike<never>
+		) => void)[] = [];
+
+		function close(): void {
+			done = true;
+			while (resolvers.length > 0)
+				(resolvers.shift() as (typeof resolvers)[0])({
+					value: undefined,
+					done: true
+				});
+		}
+
+		function push(
+			data: { value: GradioEvent; done: boolean } | PromiseLike<never>
+		): void {
+			if (done) return;
+			if (resolvers.length > 0) {
+				(resolvers.shift() as (typeof resolvers)[0])(data);
+			} else {
+				values.push(data);
+			}
+		}
+
+		function push_error(error: unknown): void {
+			push(thenable_reject(error));
+			close();
+		}
+
+		function push_event(event: GradioEvent): void {
+			push({ value: event, done: false });
+		}
+
+		function next(): Promise<IteratorResult<GradioEvent, unknown>> {
+			if (values.length > 0)
+				return Promise.resolve(values.shift() as (typeof values)[0]);
+			if (done) return Promise.resolve({ value: undefined, done: true });
+			return new Promise((resolve) => resolvers.push(resolve));
+		}
+
+		const iterator = {
+			[Symbol.asyncIterator]: () => iterator,
+			next,
+			throw: async (value: unknown) => {
+				push_error(value);
+				return next();
+			},
+			return: async () => {
+				close();
+				return next();
+			},
+			cancel,
+			event_id: event_id_cb
+		};
+
+		return iterator;
 	} catch (error) {
 		console.error("Submit function encountered an error:", error);
 		throw error;
 	}
+}
+
+function thenable_reject<T>(error: T): PromiseLike<never> {
+	return {
+		then: (
+			resolve: (value: never) => PromiseLike<never>,
+			reject: (error: T) => PromiseLike<never>
+		) => reject(error)
+	};
 }
 
 function get_endpoint_info(
@@ -687,13 +845,15 @@ function get_endpoint_info(
 	if (typeof endpoint === "number") {
 		fn_index = endpoint;
 		endpoint_info = api_info.unnamed_endpoints[fn_index];
-		dependency = config.dependencies[endpoint];
+		dependency = config.dependencies.find((dep) => dep.id == endpoint)!;
 	} else {
 		const trimmed_endpoint = endpoint.replace(/^\//, "");
 
 		fn_index = api_map[trimmed_endpoint];
 		endpoint_info = api_info.named_endpoints[endpoint.trim()];
-		dependency = config.dependencies[api_map[trimmed_endpoint]];
+		dependency = config.dependencies.find(
+			(dep) => dep.id == api_map[trimmed_endpoint]
+		)!;
 	}
 
 	if (typeof fn_index !== "number") {

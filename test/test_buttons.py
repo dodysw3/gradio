@@ -13,7 +13,7 @@ class TestClearButton:
                 textbox = gr.Textbox(scale=3, interactive=True)
                 gr.ClearButton([textbox, chatbot], scale=1)
 
-        clear_event_trigger = demo.fns.pop()
+        clear_event_trigger = demo.fns.pop(demo.default_config.fn_id - 1)
         assert not clear_event_trigger.fn
         assert clear_event_trigger.js
         assert clear_event_trigger.outputs == [textbox, chatbot]
@@ -24,7 +24,7 @@ class TestClearButton:
             state = gr.State("")
             gr.ClearButton([state, chatbot], scale=1)
 
-        clear_event_trigger_state = demo.fns.pop()
+        clear_event_trigger_state = demo.fns.pop(demo.default_config.fn_id - 1)
         assert clear_event_trigger_state.fn
 
 
@@ -34,12 +34,6 @@ class TestOAuthButtons:
         with pytest.warns(UserWarning):
             with gr.Blocks():
                 gr.LoginButton()
-
-    @pytest.mark.flaky
-    def test_logout_button_warns_when_not_on_spaces(self):
-        with pytest.warns(UserWarning):
-            with gr.Blocks():
-                gr.LogoutButton()
 
     @patch("gradio.oauth.get_space", lambda: "fake_space")
     @patch("gradio.oauth._add_oauth_routes")

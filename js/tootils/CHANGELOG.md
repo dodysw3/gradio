@@ -1,4 +1,304 @@
-# @gradio/tootils
+# @self/tootils
+
+## 0.7.10
+
+### Dependency updates
+
+- @gradio/statustracker@0.9.7
+
+## 0.7.9
+
+### Dependency updates
+
+- @gradio/utils@0.9.0
+- @gradio/statustracker@0.9.6
+
+## 0.7.8
+
+### Dependency updates
+
+- @gradio/utils@0.8.0
+- @gradio/statustracker@0.9.5
+
+## 0.7.7
+
+### Dependency updates
+
+- @gradio/statustracker@0.9.4
+
+## 0.7.6
+
+### Dependency updates
+
+- @gradio/statustracker@0.9.3
+
+## 0.7.5
+
+### Dependency updates
+
+- @gradio/statustracker@0.9.2
+
+## 0.7.4
+
+### Dependency updates
+
+- @gradio/statustracker@0.9.1
+
+## 0.7.3
+
+### Dependency updates
+
+- @gradio/statustracker@0.9.0
+
+## 0.7.2
+
+### Fixes
+
+- [#9528](https://github.com/gradio-app/gradio/pull/9528) [`9004b11`](https://github.com/gradio-app/gradio/commit/9004b110640bdb54995343a870bf080ee15da02d) - Fix Lite to work on FireFox.  Thanks @whitphx!
+
+## 0.7.1
+
+### Dependency updates
+
+- @gradio/statustracker@0.8.1
+
+## 0.7.0
+
+### Features
+
+- [#8843](https://github.com/gradio-app/gradio/pull/8843) [`6f95286`](https://github.com/gradio-app/gradio/commit/6f95286337459efbccb95c9cfac63355669df9ee) - SSR e2e + fixes
+
+### Dependencies
+
+- @gradio/statustracker@0.8.0
+- @gradio/utils@0.7.0
+
+## 0.7.0-beta.5
+
+### Features
+
+- [#9590](https://github.com/gradio-app/gradio/pull/9590) [`e853c41`](https://github.com/gradio-app/gradio/commit/e853c413583d91186aef3aceb0849d0ec0494834) - SSR e2e + fixes.  Thanks @pngwn!
+
+### Dependency updates
+
+- @gradio/statustracker@0.8.0-beta.5
+
+## 0.6.5-beta.4
+
+### Dependency updates
+
+- @gradio/statustracker@0.8.0-beta.4
+
+## 0.6.5-beta.3
+
+### Dependency updates
+
+- @gradio/statustracker@0.8.0-beta.3
+
+## 0.6.5-beta.2
+
+### Dependency updates
+
+- @gradio/statustracker@0.8.0-beta.2
+
+## 0.6.5-beta.2
+
+### Dependency updates
+
+- @gradio/statustracker@0.8.0-beta.2
+- @gradio/utils@0.7.0-beta.2
+
+## 0.6.5-beta.1
+
+### Dependency updates
+
+- @gradio/statustracker@0.8.0-beta.1
+- @gradio/utils@0.7.0-beta.1
+
+## 0.6.5
+
+### Fixes
+
+- [#9163](https://github.com/gradio-app/gradio/pull/9163) [`2b6cbf2`](https://github.com/gradio-app/gradio/commit/2b6cbf25908e42cf027324e54ef2cc0baad11a91) - fix exports and generate types.  Thanks @pngwn!
+
+### Dependency updates
+
+- @gradio/utils@0.6.1
+- @gradio/statustracker@0.7.6
+
+## 0.6.4
+
+### Dependency updates
+
+- @gradio/utils@0.6.0
+- @gradio/statustracker@0.7.5
+
+## 0.6.3
+
+### Dependency updates
+
+- @gradio/statustracker@0.7.4
+
+## 0.6.2
+
+### Dependency updates
+
+- @gradio/utils@0.5.2
+- @gradio/statustracker@0.7.3
+
+## 0.6.1
+
+### Dependency updates
+
+- @gradio/statustracker@0.7.2
+
+## 0.6.0
+
+### Highlights
+
+#### Support message format in chatbot 💬 ([#8422](https://github.com/gradio-app/gradio/pull/8422) [`4221290`](https://github.com/gradio-app/gradio/commit/4221290d847041024b1faa3df5585bba0775b8b3))
+
+`gr.Chatbot` and `gr.ChatInterface` now support the [Messages API](https://huggingface.co/docs/text-generation-inference/en/messages_api#messages-api), which is fully compatible with LLM API providers such as Hugging Face Text Generation Inference, OpenAI's chat completions API, and Llama.cpp server. 
+
+Building Gradio applications around these LLM solutions is now even easier! 
+
+`gr.Chatbot` and `gr.ChatInterface` now have a `type` parameter that can accept two values - `'tuples'` and `'messages'`. If set to `'tuples'`, the default chatbot data format is expected. If set to `'messages'`, a list of dictionaries with `content` and `role` keys is expected. See below - 
+
+```python
+def chat_greeter(msg, history):
+    history.append({"role": "assistant", "content": "Hello!"})
+    return history
+```
+
+Additionally, gradio now exposes a `gr.ChatMessage` dataclass you can use for IDE type hints and auto completion.
+
+<img width="852" alt="image" src="https://github.com/freddyaboulton/freddyboulton/assets/41651716/d283e8f3-b194-466a-8194-c7e697dca9ad">
+
+
+#### Tool use in Chatbot 🛠️
+
+The Gradio Chatbot can now natively display tool usage and intermediate thoughts common in Agent and chain-of-thought workflows!
+
+If you are using the new "messages" format, simply add a `metadata` key with a dictionary containing a `title` key and `value`. This will display the assistant message in an expandable message box to show the result of a tool or intermediate step.
+
+```python
+import gradio as gr
+from gradio import ChatMessage
+import time
+
+def generate_response(history):
+    history.append(ChatMessage(role="user", content="What is the weather in San Francisco right now?"))
+    yield history
+    time.sleep(0.25)
+    history.append(ChatMessage(role="assistant",
+                               content="In order to find the current weather in San Francisco, I will need to use my weather tool.")
+                               )
+    yield history
+    time.sleep(0.25)
+
+    history.append(ChatMessage(role="assistant",
+                               content="API Error when connecting to weather service.",
+                              metadata={"title": "💥 Error using tool 'Weather'"})
+                  )
+    yield history
+    time.sleep(0.25)
+
+    history.append(ChatMessage(role="assistant",
+                               content="I will try again",
+                              ))
+    yield history
+    time.sleep(0.25)
+
+    history.append(ChatMessage(role="assistant",
+                               content="Weather 72 degrees Fahrenheit with 20% chance of rain.",
+                                metadata={"title": "🛠️ Used tool 'Weather'"}
+                              ))
+    yield history
+    time.sleep(0.25)
+
+    history.append(ChatMessage(role="assistant",
+                               content="Now that the API succeeded I can complete my task.",
+                              ))
+    yield history
+    time.sleep(0.25)
+
+    history.append(ChatMessage(role="assistant",
+                               content="It's a sunny day in San Francisco with a current temperature of 72 degrees Fahrenheit and a 20% chance of rain. Enjoy the weather!",
+                              ))
+    yield history
+
+
+with gr.Blocks() as demo:
+    chatbot  = gr.Chatbot(type="messages")
+    button = gr.Button("Get San Francisco Weather")
+    button.click(generate_response, chatbot, chatbot)
+
+if __name__ == "__main__":
+    demo.launch()
+```
+
+
+
+![tool-box-demo](https://github.com/freddyaboulton/freddyboulton/assets/41651716/cf73ecc9-90ac-42ce-bca5-768e0cc00a48)
+
+ Thanks @freddyaboulton!
+
+### Features
+
+- [#8222](https://github.com/gradio-app/gradio/pull/8222) [`3a6142f`](https://github.com/gradio-app/gradio/commit/3a6142fa4829aa6d65d7b8388fbba49cc8db8ab1) - Lite load perf ci.  Thanks @whitphx!
+
+### Dependency updates
+
+- @gradio/utils@0.5.1
+- @gradio/statustracker@0.7.1
+
+## 0.5.1
+
+### Dependency updates
+
+- @gradio/utils@0.5.0
+- @gradio/statustracker@0.7.0
+
+## 0.5.0
+
+### Features
+
+- [#8417](https://github.com/gradio-app/gradio/pull/8417) [`96d8de2`](https://github.com/gradio-app/gradio/commit/96d8de231270321da5f310768643363276df3204) - add delete event to `File` component.  Thanks @pngwn!
+
+### Dependency updates
+
+- @gradio/statustracker@0.6.0
+
+## 0.4.5
+
+### Dependency updates
+
+- @gradio/statustracker@0.6.0
+
+## 0.4.4
+
+### Dependency updates
+
+- @gradio/utils@0.4.2
+- @gradio/statustracker@0.5.5
+
+## 0.4.3
+
+### Dependency updates
+
+- @gradio/statustracker@0.5.4
+
+## 0.4.2
+
+### Dependency updates
+
+- @gradio/statustracker@0.5.3
+
+## 0.4.1
+
+### Dependency updates
+
+- @gradio/statustracker@0.5.2
 
 ## 0.4.0
 

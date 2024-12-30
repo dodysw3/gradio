@@ -13,12 +13,13 @@ import shutil
 import tempfile
 import time
 import warnings
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Literal, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, Optional, TypedDict
 
 import fsspec.asyn
 import httpx
@@ -38,12 +39,13 @@ WS_URL = "queue/join"
 UPLOAD_URL = "upload"
 LOGIN_URL = "login"
 CONFIG_URL = "config"
-API_INFO_URL = "info"
+API_INFO_URL = "info?all_endpoints=True"
 RAW_API_INFO_URL = "info?serialize=False"
 SPACE_FETCHER_URL = "https://gradio-space-api-fetcher-v2.hf.space/api"
 RESET_URL = "reset"
 SPACE_URL = "https://hf.space/{}"
 HEARTBEAT_URL = "heartbeat/{session_hash}"
+CANCEL_URL = "cancel"
 
 STATE_COMPONENT = "state"
 INVALID_RUNTIME = [
@@ -118,9 +120,10 @@ class ServerMessage(str, Enum):
     log = "log"
     progress = "progress"
     heartbeat = "heartbeat"
-    server_stopped = "server_stopped"
+    server_stopped = "Server stopped unexpectedly."
     unexpected_error = "unexpected_error"
     close_stream = "close_stream"
+    process_streaming = "process_streaming"
 
 
 class Status(Enum):
@@ -684,6 +687,21 @@ def get_extension(encoding: str) -> str | None:
     return extension
 
 
+def is_valid_file(file_path: str, file_types: list[str]) -> bool:
+    mime_type = get_mimetype(file_path)
+    for file_type in file_types:
+        if file_type == "file":
+            return True
+        if file_type.startswith("."):
+            file_type = file_type.lstrip(".").lower()
+            file_ext = Path(file_path).suffix.lstrip(".").lower()
+            if file_type == file_ext:
+                return True
+        elif mime_type is not None and mime_type.startswith(f"{file_type}/"):
+            return True
+    return False
+
+
 def encode_file_to_base64(f: str | Path):
     with open(f, "rb") as file:
         encoded_string = base64.b64encode(file.read())
@@ -732,14 +750,21 @@ def decode_base64_to_binary(encoding: str) -> tuple[bytes, str | None]:
 
 
 def strip_invalid_filename_characters(filename: str, max_bytes: int = 200) -> str:
-    """Strips invalid characters from a filename and ensures that the file_length is less than `max_bytes` bytes."""
-    filename = "".join([char for char in filename if char.isalnum() or char in "._- "])
+    """
+    Strips invalid characters from a filename and ensures it does not exceed the maximum byte length
+    Invalid characters are any characters that are not alphanumeric or one of the following: . _ -
+    The filename may include an extension (in which case it is preserved exactly as is), or could be just a name without an extension.
+    """
+    name, ext = os.path.splitext(filename)
+    name = "".join([char for char in name if char.isalnum() or char in "._- "])
+    filename = name + ext
     filename_len = len(filename.encode())
     if filename_len > max_bytes:
         while filename_len > max_bytes:
-            if len(filename) == 0:
+            if len(name) == 0:
                 break
-            filename = filename[:-1]
+            name = name[:-1]
+            filename = name + ext
             filename_len = len(filename.encode())
     return filename
 
@@ -880,9 +905,12 @@ def get_type(schema: dict):
 
 
 FILE_DATA_FORMATS = [
+    "Dict(path: str | None (Path to a local file), url: str | None (Publicly available url or base64 encoded image), size: int | None (Size of image in bytes), orig_name: str | None (Original filename), mime_type: str | None (mime type of image), is_stream: bool (Can always be set to False), meta: Dict())",
+    "dict(path: str | None (Path to a local file), url: str | None (Publicly available url or base64 encoded image), size: int | None (Size of image in bytes), orig_name: str | None (Original filename), mime_type: str | None (mime type of image), is_stream: bool (Can always be set to False), meta: dict())",
     "Dict(path: str, url: str | None, size: int | None, orig_name: str | None, mime_type: str | None)",
     "Dict(path: str, url: str | None, size: int | None, orig_name: str | None, mime_type: str | None, is_stream: bool)",
     "Dict(path: str, url: str | None, size: int | None, orig_name: str | None, mime_type: str | None, is_stream: bool, meta: Dict())",
+    "dict(path: str, url: str | None, size: int | None, orig_name: str | None, mime_type: str | None, is_stream: bool, meta: dict())",
 ]
 
 CURRENT_FILE_DATA_FORMAT = FILE_DATA_FORMATS[-1]
@@ -900,7 +928,7 @@ def _json_schema_to_python_type(schema: Any, defs) -> str:
     type_ = get_type(schema)
     if type_ == {}:
         if "json" in schema.get("description", {}):
-            return "Dict[Any, Any]"
+            return "str | float | bool | list | dict"
         else:
             return "Any"
     elif type_ == "$ref":
@@ -927,15 +955,15 @@ def _json_schema_to_python_type(schema: Any, defs) -> str:
             elements = ", ".join(
                 [_json_schema_to_python_type(i, defs) for i in items["prefixItems"]]
             )
-            return f"Tuple[{elements}]"
+            return f"tuple[{elements}]"
         elif "prefixItems" in schema:
             elements = ", ".join(
                 [_json_schema_to_python_type(i, defs) for i in schema["prefixItems"]]
             )
-            return f"Tuple[{elements}]"
+            return f"tuple[{elements}]"
         else:
             elements = _json_schema_to_python_type(items, defs)
-            return f"List[{elements}]"
+            return f"list[{elements}]"
     elif type_ == "object":
 
         def get_desc(v):
@@ -954,7 +982,7 @@ def _json_schema_to_python_type(schema: Any, defs) -> str:
                 f"str, {_json_schema_to_python_type(schema['additionalProperties'], defs)}"
             ]
         des = ", ".join(des)
-        return f"Dict({des})"
+        return f"dict({des})"
     elif type_ in ["oneOf", "anyOf"]:
         desc = " | ".join([_json_schema_to_python_type(i, defs) for i in schema[type_]])
         return desc
@@ -1079,7 +1107,7 @@ SKIP_COMPONENTS = {
 }
 
 
-def file(filepath_or_url: str | Path):
+def handle_file(filepath_or_url: str | Path):
     s = str(filepath_or_url)
     data = {"path": s, "meta": {"_type": "gradio.FileData"}}
     if is_http_url_like(s):
@@ -1090,6 +1118,13 @@ def file(filepath_or_url: str | Path):
         raise ValueError(
             f"File {s} does not exist on local filesystem and is not a valid URL."
         )
+
+
+def file(filepath_or_url: str | Path):
+    warnings.warn(
+        "file() is deprecated and will be removed in a future version. Use handle_file() instead."
+    )
+    return handle_file(filepath_or_url)
 
 
 def construct_args(
@@ -1125,18 +1160,18 @@ def construct_args(
     for key, value in kwargs.items():
         if key in kwarg_arg_mapping:
             if kwarg_arg_mapping[key] < num_args:
-                raise ValueError(
+                raise TypeError(
                     f"Parameter `{key}` is already set as a positional argument. Please click on 'view API' in the footer of the Gradio app to see usage."
                 )
             else:
                 _args[kwarg_arg_mapping[key]] = value
         else:
-            raise ValueError(
+            raise TypeError(
                 f"Parameter `{key}` is not a valid key-word argument. Please click on 'view API' in the footer of the Gradio app to see usage."
             )
 
     if _Keywords.NO_VALUE in _args:
-        raise ValueError(
+        raise TypeError(
             f"No value provided for required argument: {kwarg_names[_args.index(_Keywords.NO_VALUE)]}"
         )
 

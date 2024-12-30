@@ -17,13 +17,14 @@ import time
 import urllib.parse
 import uuid
 import warnings
+from collections.abc import Callable
 from concurrent.futures import Future
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import httpx
 import huggingface_hub
@@ -39,7 +40,7 @@ from gradio_client import utils
 from gradio_client.compatibility import EndpointV3Compatibility
 from gradio_client.data_classes import ParameterInfo
 from gradio_client.documentation import document
-from gradio_client.exceptions import AuthenticationError
+from gradio_client.exceptions import AppError, AuthenticationError
 from gradio_client.utils import (
     Communicator,
     JobStatus,
@@ -122,43 +123,32 @@ class Client:
     def __init__(
         self,
         src: str,
-        hf_token: str | None = None,
+        hf_token: str | Literal[False] | None = False,
         max_workers: int = 40,
-        serialize: bool | None = None,  # TODO: remove in 1.0
-        output_dir: str
-        | Path = DEFAULT_TEMP_DIR,  # Maybe this can be combined with `download_files` in 1.0
         verbose: bool = True,
         auth: tuple[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
         *,
         headers: dict[str, str] | None = None,
-        upload_files: bool = True,  # TODO: remove and hardcode to False in 1.0
-        download_files: bool = True,  # TODO: consider setting to False in 1.0
-        _skip_components: bool = True,  # internal parameter to skip values certain components (e.g. State) that do not need to be displayed to users.
+        download_files: str | Path | Literal[False] = DEFAULT_TEMP_DIR,
         ssl_verify: bool = True,
+        _skip_components: bool = True,  # internal parameter to skip values certain components (e.g. State) that do not need to be displayed to users.
         connection_reuse: bool = False,
     ):
         """
         Parameters:
-            src: Either the name of the Hugging Face Space to load, (e.g. "abidlabs/whisper-large-v2") or the full URL (including "http" or "https") of the hosted Gradio app to load (e.g. "http://mydomain.com/app" or "https://bec81a83-5b5c-471e.gradio.live/").
-            hf_token: The Hugging Face token to use to access private Spaces. Automatically fetched if you are logged in via the Hugging Face Hub CLI. Obtain from: https://huggingface.co/settings/token
-            max_workers: The maximum number of thread workers that can be used to make requests to the remote Gradio app simultaneously.
-            serialize: Deprecated. Please use the equivalent `upload_files` parameter instead.
-            output_dir: The directory to save files that are downloaded from the remote API. If None, reads from the GRADIO_TEMP_DIR environment variable. Defaults to a temporary directory on your machine.
-            verbose: Whether the client should print statements to the console.
-            headers: Additional headers to send to the remote Gradio app on every request. By default only the HF authorization and user-agent headers are sent. These headers will override the default headers if they have the same keys.
-            upload_files: Whether the client should treat input string filepath as files and upload them to the remote server. If False, the client will treat input string filepaths as strings always and not modify them, and files should be passed in explicitly using `gradio_client.file("path/to/file/or/url")` instead. This parameter will be deleted and False will become the default in a future version.
-            download_files: Whether the client should download output files from the remote API and return them as string filepaths on the local machine. If False, the client will return a FileData dataclass object with the filepath on the remote machine instead.
-            ssl_verify: If False, skips certificate validation which allows the client to connect to Gradio apps that are using self-signed certificates.
+            src: either the name of the Hugging Face Space to load, (e.g. "abidlabs/whisper-large-v2") or the full URL (including "http" or "https") of the hosted Gradio app to load (e.g. "http://mydomain.com/app" or "https://bec81a83-5b5c-471e.gradio.live/").
+            hf_token: optional Hugging Face token to use to access private Spaces. By default, no token is sent to the server. Set `hf_token=None` to use the locally saved token if there is one (warning: only provide a token if you are loading a trusted private Space as the token can be read by the Space you are loading). Find your tokens here: https://huggingface.co/settings/tokens.
+            max_workers: maximum number of thread workers that can be used to make requests to the remote Gradio app simultaneously.
+            verbose: whether the client should print statements to the console.
+            headers: additional headers to send to the remote Gradio app on every request. By default only the HF authorization and user-agent headers are sent. This parameter will override the default headers if they have the same keys.
+            download_files: directory where the client should download output files  on the local machine from the remote API. By default, uses the value of the GRADIO_TEMP_DIR environment variable which, if not set by the user, is a temporary directory on your machine. If False, the client does not download files and returns a FileData dataclass object with the filepath on the remote machine instead.
+            ssl_verify: if False, skips certificate validation which allows the client to connect to Gradio apps that are using self-signed certificates.
+            httpx_kwargs: additional keyword arguments to pass to `httpx.Client`, `httpx.stream`, `httpx.get` and `httpx.post`. This can be used to set timeouts, proxies, http auth, etc.
             connection_reuse: If True, you must call close() when finishes using client to avoid resources leak.
         """
         self.verbose = verbose
         self.hf_token = hf_token
-        if serialize is not None:
-            warnings.warn(
-                "The `serialize` parameter is deprecated and will be removed. Please use the equivalent `upload_files` parameter instead."
-            )
-            upload_files = serialize
-        self.upload_files = upload_files
         self.download_files = download_files
         self._skip_components = _skip_components
         self.headers = build_hf_headers(
@@ -171,9 +161,14 @@ class Client:
         self.ssl_verify = ssl_verify
         self.space_id = None
         self.cookies: dict[str, str] = {}
-        self.output_dir = (
-            str(output_dir) if isinstance(output_dir, Path) else output_dir
-        )
+        if isinstance(self.download_files, (str, Path)):
+            if not os.path.exists(self.download_files):
+                os.makedirs(self.download_files, exist_ok=True)
+            if not os.path.isdir(self.download_files):
+                raise ValueError(f"Path: {self.download_files} is not a directory.")
+            self.output_dir = str(self.download_files)
+        else:
+            self.output_dir = DEFAULT_TEMP_DIR
 
         if src.startswith("http://") or src.startswith("https://"):
             _src = src if src.endswith("/") else src + "/"
@@ -200,6 +195,8 @@ class Client:
         if self.verbose:
             print(f"Loaded as API: {self.src} ✔")
 
+        self.httpx_kwargs = {} if httpx_kwargs is None else httpx_kwargs
+
         if connection_reuse:
             _http2 = bool(importlib.util.find_spec("h2"))
             self.httpx_asyncclient = httpx.AsyncClient(
@@ -217,27 +214,36 @@ class Client:
             self.httpx_asyncclient = None
             self.httpx_client = None
 
+
         if auth is not None:
             self._login(auth)
 
         self.config = self._get_config()
-        self.protocol: Literal[
-            "ws", "sse", "sse_v1", "sse_v2", "sse_v2.1"
-        ] = self.config.get("protocol", "ws")
-        self.api_url = urllib.parse.urljoin(self.src, utils.API_URL)
-        self.sse_url = urllib.parse.urljoin(
-            self.src, utils.SSE_URL_V0 if self.protocol == "sse" else utils.SSE_URL
+        self.protocol: Literal["ws", "sse", "sse_v1", "sse_v2", "sse_v2.1"] = (
+            self.config.get("protocol", "ws")
         )
-        self.heartbeat_url = urllib.parse.urljoin(self.src, utils.HEARTBEAT_URL)
+        api_prefix: str = self.config.get("api_prefix", "")
+        self.api_prefix = api_prefix.lstrip("/") + "/"
+        self.src_prefixed = (
+            urllib.parse.urljoin(self.src, self.api_prefix).rstrip("/") + "/"
+        )
+        self.api_url = urllib.parse.urljoin(self.src_prefixed, utils.API_URL)
+        self.sse_url = urllib.parse.urljoin(
+            self.src_prefixed,
+            utils.SSE_URL_V0 if self.protocol == "sse" else utils.SSE_URL,
+        )
+        self.heartbeat_url = urllib.parse.urljoin(
+            self.src_prefixed, utils.HEARTBEAT_URL
+        )
         self.sse_data_url = urllib.parse.urljoin(
-            self.src,
+            self.src_prefixed,
             utils.SSE_DATA_URL_V0 if self.protocol == "sse" else utils.SSE_DATA_URL,
         )
         self.ws_url = urllib.parse.urljoin(
-            self.src.replace("http", "ws", 1), utils.WS_URL
+            self.src_prefixed.replace("http", "ws", 1), utils.WS_URL
         )
-        self.upload_url = urllib.parse.urljoin(self.src, utils.UPLOAD_URL)
-        self.reset_url = urllib.parse.urljoin(self.src, utils.RESET_URL)
+        self.upload_url = urllib.parse.urljoin(self.src_prefixed, utils.UPLOAD_URL)
+        self.reset_url = urllib.parse.urljoin(self.src_prefixed, utils.RESET_URL)
         self.app_version = version.parse(self.config.get("version", "2.0"))
         self._info = self._get_api_info()
         self.session_hash = str(uuid.uuid4())
@@ -245,10 +251,12 @@ class Client:
         endpoint_class = (
             Endpoint if self.protocol.startswith("sse") else EndpointV3Compatibility
         )
-        self.endpoints = [
-            endpoint_class(self, fn_index, dependency, self.protocol)
+        self.endpoints = {
+            dependency.get("id", fn_index): endpoint_class(
+                self, dependency.get("id", fn_index), dependency, self.protocol
+            )
             for fn_index, dependency in enumerate(self.config["dependencies"])
-        ]
+        }
 
         # Create a pool of threads to handle the requests
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
@@ -285,13 +293,15 @@ class Client:
         while True:
             url = self.heartbeat_url.format(session_hash=self.session_hash)
             try:
+                httpx_kwargs = self.httpx_kwargs.copy()
+                httpx_kwargs.setdefault("timeout", 20)
                 with httpx.stream(
                     "GET",
                     url,
                     headers=self.headers,
                     cookies=self.cookies,
                     verify=self.ssl_verify,
-                    timeout=20,
+                    **httpx_kwargs,
                 ) as response:
                     for _ in response.iter_lines():
                         if self._refresh_heartbeat.is_set():
@@ -306,10 +316,12 @@ class Client:
         self, protocol: Literal["sse_v1", "sse_v2", "sse_v2.1", "sse_v3"]
     ) -> None:
         try:
+            httpx_kwargs = self.httpx_kwargs.copy()
+            httpx_kwargs.setdefault("timeout", httpx.Timeout(timeout=None))
             with OptionalHttpxClient(
                 self.httpx_client,
-                timeout=httpx.Timeout(timeout=None),
                 verify=self.ssl_verify,
+                **httpx_kwargs,
             ) as client:
                 with client.stream(
                     "GET",
@@ -326,7 +338,9 @@ class Client:
                             resp = json.loads(line[5:])
                             if resp["msg"] == ServerMessage.heartbeat:
                                 continue
-                            elif resp["msg"] == ServerMessage.server_stopped:
+                            elif (
+                                resp.get("message", "") == ServerMessage.server_stopped
+                            ):
                                 for (
                                     pending_messages
                                 ) in self.pending_messages_per_event.values():
@@ -350,6 +364,11 @@ class Client:
                         else:
                             raise ValueError(f"Unexpected SSE line: '{line}'")
         except BaseException as e:
+            # If the job is cancelled the stream will close so we
+            # should not raise this httpx exception that comes from the
+            # stream abruply closing
+            if isinstance(e, httpx.RemoteProtocolError):
+                return
             import traceback
 
             traceback.print_exc()
@@ -362,6 +381,7 @@ class Client:
                 json={**data, **hash_data},
                 headers=self.headers,
                 cookies=self.cookies,
+                **self.httpx_kwargs,
             )
         if req.status_code == 503:
             raise QueueError("Queue is full! Please try again.")
@@ -391,7 +411,7 @@ class Client:
         cls,
         from_id: str,
         to_id: str | None = None,
-        hf_token: str | None = None,
+        hf_token: str | Literal[False] | None = False,
         private: bool = True,
         hardware: Literal[
             "cpu-basic",
@@ -424,7 +444,7 @@ class Client:
         Parameters:
             from_id: The name of the Hugging Face Space to duplicate in the format "{username}/{space_id}", e.g. "gradio/whisper".
             to_id: The name of the new Hugging Face Space to create, e.g. "abidlabs/whisper-duplicate". If not provided, the new Space will be named "{your_HF_username}/{space_id}".
-            hf_token: The Hugging Face token to use to access private Spaces. Automatically fetched if you are logged in via the Hugging Face Hub CLI. Obtain from: https://huggingface.co/settings/token
+            hf_token: optional Hugging Face token to use to duplicating private Spaces. By default, no token is sent to the server. Set `hf_token=None` to use the locally saved token if there is one. Find your tokens here: https://huggingface.co/settings/tokens.
             private: Whether the new Space should be private (True) or public (False). Defaults to True.
             hardware: The hardware tier to use for the new Space. Defaults to the same hardware tier as the original Space. Options include "cpu-basic", "cpu-upgrade", "t4-small", "t4-medium", "a10g-small", "a10g-large", "a100-large", subject to availability.
             secrets: A dictionary of (secret key, secret value) to pass to the new Space. Defaults to None. Secrets are only used when the Space is duplicated for the first time, and are not updated if the duplicated Space already exists.
@@ -531,11 +551,7 @@ class Client:
             client.predict(5, "add", 4, api_name="/predict")
             >> 9.0
         """
-        inferred_fn_index = self._infer_fn_index(api_name, fn_index)
-        if self.endpoints[inferred_fn_index].is_continuous:
-            raise ValueError(
-                "Cannot call predict on this function as it may run forever. Use submit instead."
-            )
+        self._infer_fn_index(api_name, fn_index)
         return self.submit(
             *args, api_name=api_name, fn_index=fn_index, **kwargs
         ).result()
@@ -576,6 +592,7 @@ class Client:
             >> 9.0
         """
         inferred_fn_index = self._infer_fn_index(api_name, fn_index)
+
         endpoint = self.endpoints[inferred_fn_index]
 
         if isinstance(endpoint, Endpoint):
@@ -594,8 +611,14 @@ class Client:
         end_to_end_fn = endpoint.make_end_to_end_fn(helper)
         future = self.executor.submit(end_to_end_fn, *args)
 
+        cancel_fn = endpoint.make_cancel(helper)
+
         job = Job(
-            future, communicator=helper, verbose=self.verbose, space_id=self.space_id
+            future,
+            communicator=helper,
+            verbose=self.verbose,
+            space_id=self.space_id,
+            _cancel_fn=cancel_fn,
         )
 
         if result_callbacks:
@@ -617,16 +640,14 @@ class Client:
         return job
 
     def _get_api_info(self):
-        if self.upload_files:
-            api_info_url = urllib.parse.urljoin(self.src, utils.API_INFO_URL)
-        else:
-            api_info_url = urllib.parse.urljoin(self.src, utils.RAW_API_INFO_URL)
+        api_info_url = urllib.parse.urljoin(self.src_prefixed, utils.RAW_API_INFO_URL)
         if self.app_version > version.Version("3.36.1"):
             r = httpx.get(
                 api_info_url,
                 headers=self.headers,
                 cookies=self.cookies,
                 verify=self.ssl_verify,
+                **self.httpx_kwargs,
             )
             if r.is_success:
                 info = r.json()
@@ -637,8 +658,9 @@ class Client:
                 utils.SPACE_FETCHER_URL,
                 json={
                     "config": json.dumps(self.config),
-                    "serialize": self.upload_files,
+                    "serialize": False,
                 },
+                **self.httpx_kwargs,
             )
             if fetch.is_success:
                 info = fetch.json()["api"]
@@ -646,7 +668,14 @@ class Client:
                 raise ValueError(
                     f"Could not fetch api info for {self.src}: {fetch.text}"
                 )
-
+        info["named_endpoints"] = {
+            a: e for a, e in info["named_endpoints"].items() if e.pop("show_api", True)
+        }
+        info["unnamed_endpoints"] = {
+            a: e
+            for a, e in info["unnamed_endpoints"].items()
+            if e.pop("show_api", True)
+        }
         return info
 
     def view_api(
@@ -793,7 +822,7 @@ class Client:
                 default_value = info.get("parameter_default")
                 default_value = utils.traverse(
                     default_value,
-                    lambda x: f"file(\"{x['url']}\")",
+                    lambda x: f"handle_file(\"{x['url']}\")",
                     utils.is_file_obj_with_meta,
                 )
                 default_info = (
@@ -851,7 +880,7 @@ class Client:
                 if config_api_name is None or config_api_name is False:
                     continue
                 if "/" + config_api_name == api_name:
-                    inferred_fn_index = i
+                    inferred_fn_index = d.get("id", i)
                     break
             else:
                 error_message = f"Cannot find a function with `api_name`: {api_name}."
@@ -861,14 +890,14 @@ class Client:
         elif fn_index is not None:
             inferred_fn_index = fn_index
             if (
-                inferred_fn_index >= len(self.endpoints)
+                inferred_fn_index not in self.endpoints
                 or not self.endpoints[inferred_fn_index].is_valid
             ):
                 raise ValueError(f"Invalid function index: {fn_index}.")
         else:
             valid_endpoints = [
                 e
-                for e in self.endpoints
+                for e in self.endpoints.values()
                 if e.is_valid
                 and e.api_name is not None
                 and e.backend_fn is not None
@@ -894,6 +923,7 @@ class Client:
             resp = client.post(
                 urllib.parse.urljoin(self.src, utils.LOGIN_URL),
                 data={"username": auth[0], "password": auth[1]},
+                **self.httpx_kwargs,
             )
         if not resp.is_success:
             if resp.status_code == 401:
@@ -912,6 +942,7 @@ class Client:
                 urllib.parse.urljoin(self.src, utils.CONFIG_URL),
                 headers=self.headers,
                 cookies=self.cookies,
+                **self.httpx_kwargs,
             )
         if r.is_success:
             return r.json()
@@ -919,6 +950,10 @@ class Client:
             raise AuthenticationError(
                 f"Could not load {self.src} as credentials were not provided. Please login."
             )
+        elif r.status_code == 429:
+            raise utils.TooManyRequestsError(
+                "Too many requests to the API, please try again later."
+            ) from None
         else:  # to support older versions of Gradio
             with OptionalHttpxClient(
                 self.httpx_client, verify=self.ssl_verify
@@ -927,6 +962,7 @@ class Client:
                     self.src,
                     headers=self.headers,
                     cookies=self.cookies,
+                    **self.httpx_kwargs,
                 )
             if not r.is_success:
                 raise ValueError(f"Could not fetch config for {self.src}")
@@ -949,7 +985,7 @@ class Client:
         discord_bot_token: str | None = None,
         api_names: list[str | tuple[str, str]] | None = None,
         to_id: str | None = None,
-        hf_token: str | None = None,
+        hf_token: str | Literal[False] | None = False,
         private: bool = False,
     ):
         """
@@ -961,7 +997,9 @@ class Client:
             hf_token: HF api token with write priviledges in order to upload the files to HF space. Can be ommitted if logged in via the HuggingFace CLI, unless the upstream space is private. Obtain from: https://huggingface.co/settings/token
             private: Whether the space hosting the discord bot is private. The visibility of the discord bot itself is set via the discord website. See https://huggingface.co/spaces/freddyaboulton/test-discord-bot-v1
         """
-
+        warnings.warn(
+            "This method is deprecated and may be removed in the future. Please see the documentation on how to create a discord bot with Gradio: https://www.gradio.app/guides/creating-a-discord-bot-from-a-gradio-app"
+        )
         if self.config["mode"] == "chat_interface" and not api_names:
             api_names = [("chat", "chat")]
 
@@ -984,7 +1022,12 @@ class Client:
                 api_names[i] = (name, name)
 
         fn = next(
-            (ep for ep in self.endpoints if ep.api_name == f"/{api_names[0][0]}"), None
+            (
+                ep
+                for ep in self.endpoints.values()
+                if ep.api_name == f"/{api_names[0][0]}"
+            ),
+            None,
         )
         if not fn:
             raise ValueError(
@@ -1123,9 +1166,7 @@ class Endpoint:
             self._get_component_type(id_) for id_ in dependency["outputs"]
         ]
         self.parameters_info = self._get_parameters_info()
-
-        self.root_url = client.src + "/" if not client.src.endswith("/") else client.src
-        self.is_continuous = dependency.get("types", {}).get("continuous", False)
+        self.root_url = self.client.src_prefixed
 
         # Disallow hitting endpoints that the Gradio app has disabled
         self.is_valid = self.api_name is not False
@@ -1186,6 +1227,79 @@ class Endpoint:
 
         return _inner
 
+    def make_cancel(
+        self,
+        helper: Communicator | None,
+    ):
+        if helper is None:
+            return
+        if self.client.app_version > version.Version("4.29.0"):
+            url = urllib.parse.urljoin(self.client.src_prefixed, utils.CANCEL_URL)
+
+            # The event_id won't be set on the helper until later
+            # so need to create the data in a function that's run at cancel time
+            def post_data():
+                return {
+                    "fn_index": self.fn_index,
+                    "session_hash": self.client.session_hash,
+                    "event_id": helper.event_id,
+                }
+
+            cancel_msg = None
+            cancellable = True
+        else:
+            candidates: list[tuple[int, list[int]]] = []
+            for i, dep in enumerate(self.client.config["dependencies"]):
+                if self.fn_index in dep["cancels"]:
+                    candidates.append(
+                        (i, [d for d in dep["cancels"] if d != self.fn_index])
+                    )
+
+            fn_index, other_cancelled = (
+                min(candidates, key=lambda x: len(x[1])) if candidates else (None, None)
+            )
+            cancellable = fn_index is not None
+            cancel_msg = None
+            if cancellable and other_cancelled:
+                other_api_names = [
+                    "/" + self.client.config["dependencies"][i].get("api_name")
+                    for i in other_cancelled
+                ]
+                cancel_msg = (
+                    f"Cancelled this job will also cancel any jobs for {', '.join(other_api_names)} "
+                    "that are currently running."
+                )
+            elif not cancellable:
+                cancel_msg = (
+                    "Cancelling this job will not stop the server from running. "
+                    "To fix this, an event must be added to the upstream app that explicitly cancels this one or "
+                    "the upstream app must be running Gradio 4.29.0 and greater."
+                )
+
+            def post_data():
+                return {
+                    "data": [],
+                    "fn_index": fn_index,
+                    "session_hash": self.client.session_hash,
+                }
+
+            url = self.client.api_url
+
+        def _cancel():
+            if cancel_msg:
+                warnings.warn(cancel_msg)
+            if cancellable:
+                httpx.post(
+                    url,
+                    json=post_data(),
+                    headers=self.client.headers,
+                    cookies=self.client.cookies,
+                    verify=self.client.ssl_verify,
+                    **self.client.httpx_kwargs,
+                )
+
+        return _cancel
+
     def make_predict(self, helper: Communicator | None = None):
         def _predict(*data) -> tuple:
             data = {
@@ -1205,12 +1319,22 @@ class Endpoint:
                 event_id = self.client.send_data(data, hash_data, self.protocol)
                 self.client.pending_event_ids.add(event_id)
                 self.client.pending_messages_per_event[event_id] = []
+                helper.event_id = event_id
                 result = self._sse_fn_v1plus(helper, event_id, self.protocol)
             else:
                 raise ValueError(f"Unsupported protocol: {self.protocol}")
 
             if "error" in result:
-                raise ValueError(result["error"])
+                if result["error"] is None:
+                    raise AppError(
+                        "The upstream Gradio app has raised an exception but has not enabled "
+                        "verbose error reporting. To enable, set show_error=True in launch()."
+                    )
+                else:
+                    raise AppError(
+                        "The upstream Gradio app has raised an exception: "
+                        + result["error"]
+                    )
 
             try:
                 output = result["data"]
@@ -1244,20 +1368,11 @@ class Endpoint:
     def process_input_files(self, *data) -> tuple:
         data_ = []
         for i, d in enumerate(data):
-            if self.client.upload_files and self.input_component_types[i].value_is_file:
-                d = utils.traverse(
-                    d,
-                    partial(self._upload_file, data_index=i),
-                    lambda f: utils.is_filepath(f)
-                    or utils.is_file_obj_with_meta(f)
-                    or utils.is_http_url_like(f),
-                )
-            elif not self.client.upload_files:
-                d = utils.traverse(
-                    d,
-                    partial(self._upload_file, data_index=i),
-                    utils.is_file_obj_with_meta,
-                )
+            d = utils.traverse(
+                d,
+                partial(self._upload_file, data_index=i),
+                utils.is_file_obj_with_meta,
+            )
             data_.append(d)
         return tuple(data_)
 
@@ -1284,7 +1399,11 @@ class Endpoint:
 
     def remove_skipped_components(self, *data) -> tuple:
         """"""
-        data = [d for d, oct in zip(data, self.output_component_types) if not oct.skip]
+        data = [
+            d
+            for d, oct in zip(data, self.output_component_types, strict=False)
+            if not oct.skip
+        ]
         return tuple(data)
 
     def reduce_singleton_output(self, *data) -> Any:
@@ -1299,16 +1418,9 @@ class Endpoint:
         else:
             return data
 
-    def _upload_file(self, f: str | dict, data_index: int) -> dict[str, str]:
-        if isinstance(f, str):
-            warnings.warn(
-                f'The Client is treating: "{f}" as a file path. In future versions, this behavior will not happen automatically. '
-                f'\n\nInstead, please provide file path or URLs like this: gradio_client.file("{f}"). '
-                "\n\nNote: to stop treating strings as filepaths unless file() is used, set upload_files=False in Client()."
-            )
-            file_path = f
-        else:
-            file_path = f["path"]
+    def _upload_file(self, f: dict, data_index: int) -> dict[str, str]:
+        file_path = f["path"]
+        orig_name = Path(file_path)
         if not utils.is_http_url_like(file_path):
             component_id = self.dependency["inputs"][data_index]
             component_config = next(
@@ -1326,47 +1438,55 @@ class Endpoint:
                     f"File {file_path} exceeds the maximum file size of {max_file_size} bytes "
                     f"set in {component_config.get('label', '') + ''} component."
                 )
-            with open(file_path, "rb") as f:
-                files = [("files", (Path(file_path).name, f))]
+            with open(file_path, "rb") as f_:
+                files = [("files", (orig_name.name, f_))]
                 with OptionalHttpxClient(
-                    self.client.httpx_client, verify=self.client.ssl_verify
+                        self.client.httpx_client, verify=self.client.ssl_verify
                 ) as client:
                     r = client.post(
                         self.client.upload_url,
                         headers=self.client.headers,
                         cookies=self.client.cookies,
                         files=files,
+                        **self.client.httpx_kwargs,
                     )
             r.raise_for_status()
             result = r.json()
             file_path = result[0]
-        return {"path": file_path}
+        # Only return orig_name if has a suffix because components
+        # use the suffix of the original name to determine format to save it to in cache.
+        return {
+            "path": file_path,
+            "orig_name": utils.strip_invalid_filename_characters(orig_name.name),
+            "meta": {"_type": "gradio.FileData"} if orig_name.suffix else None,
+        }
 
     def _download_file(self, x: dict) -> str:
         url_path = self.root_url + "file=" + x["path"]
         if self.client.output_dir is not None:
             os.makedirs(self.client.output_dir, exist_ok=True)
 
-        sha1 = hashlib.sha1()
+        sha = hashlib.sha256()
         temp_dir = Path(tempfile.gettempdir()) / secrets.token_hex(20)
         temp_dir.mkdir(exist_ok=True, parents=True)
         with OptionalHttpxClient(
-            self.client.httpx_client, verify=self.client.ssl_verify
+                self.client.httpx_client, verify=self.client.ssl_verify
         ) as client:
             with client.stream(
-                "GET",
-                url_path,
-                headers=self.client.headers,
-                cookies=self.client.cookies,
-                follow_redirects=True,
+                    "GET",
+                    url_path,
+                    headers=self.client.headers,
+                    cookies=self.client.cookies,
+                    follow_redirects=True,
+                    **self.client.httpx_kwargs,
             ) as response:
                 response.raise_for_status()
                 with open(temp_dir / Path(url_path).name, "wb") as f:
-                    for chunk in response.iter_bytes(chunk_size=128 * sha1.block_size):
-                        sha1.update(chunk)
+                    for chunk in response.iter_bytes(chunk_size=128 * sha.block_size):
+                        sha.update(chunk)
                         f.write(chunk)
 
-        directory = Path(self.client.output_dir) / sha1.hexdigest()
+        directory = Path(self.client.output_dir) / sha.hexdigest()
         directory.mkdir(exist_ok=True, parents=True)
         dest = directory / Path(url_path).name
         shutil.move(temp_dir / Path(url_path).name, dest)
@@ -1377,6 +1497,7 @@ class Endpoint:
             self.client.httpx_client,
             timeout=httpx.Timeout(timeout=None),
             verify=self.client.ssl_verify,
+            **self.client.httpx_kwargs,
         ) as client:
             return utils.get_pred_from_sse_v0(
                 client,
@@ -1427,6 +1548,7 @@ class Job(Future):
         communicator: Communicator | None = None,
         verbose: bool = True,
         space_id: str | None = None,
+        _cancel_fn: Callable[[], None] | None = None,
     ):
         """
         Parameters:
@@ -1440,6 +1562,7 @@ class Job(Future):
         self._counter = 0
         self.verbose = verbose
         self.space_id = space_id
+        self.cancel_fn = _cancel_fn
 
     def __iter__(self) -> Job:
         return self
@@ -1578,10 +1701,6 @@ class Job(Future):
                     )
                 return self.communicator.job.latest_status
 
-    def __getattr__(self, name):
-        """Forwards any properties to the Future class."""
-        return getattr(self.future, name)
-
     def cancel(self) -> bool:
         """Cancels the job as best as possible.
 
@@ -1600,5 +1719,11 @@ class Job(Future):
         if self.communicator:
             with self.communicator.lock:
                 self.communicator.should_cancel = True
+                if self.cancel_fn:
+                    self.cancel_fn()
                 return True
         return self.future.cancel()
+
+    def __getattr__(self, name):
+        """Forwards any properties to the Future class."""
+        return getattr(self.future, name)

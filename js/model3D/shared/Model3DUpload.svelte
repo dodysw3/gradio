@@ -9,6 +9,7 @@
 	import type Canvas3D from "./Canvas3D.svelte";
 
 	export let value: null | FileData;
+	export let display_mode: "solid" | "point_cloud" | "wireframe" = "solid";
 	export let clear_color: [number, number, number, number] = [0, 0, 0, 0];
 	export let label = "";
 	export let show_label: boolean;
@@ -17,6 +18,7 @@
 	export let zoom_speed = 1;
 	export let pan_speed = 1;
 	export let max_file_size: number | null = null;
+	export let uploading = false;
 
 	// alpha, beta, radius
 	export let camera_position: [number | null, number | null, number | null] = [
@@ -95,6 +97,7 @@
 		{max_file_size}
 		filetype={[".stl", ".obj", ".gltf", ".glb", "model/obj", ".splat", ".ply"]}
 		bind:dragging
+		bind:uploading
 		on:error
 	>
 		<slot />
@@ -106,7 +109,6 @@
 			on:clear={handle_clear}
 			{i18n}
 			on:undo={handle_undo}
-			absolute
 		/>
 
 		{#if use_3dgs}
@@ -121,6 +123,7 @@
 				this={Canvas3DComponent}
 				bind:this={canvas3d}
 				{value}
+				{display_mode}
 				{clear_color}
 				{camera_position}
 				{zoom_speed}
@@ -138,6 +141,8 @@
 		align-items: center;
 		width: var(--size-full);
 		height: var(--size-full);
+		border-radius: var(--block-radius);
+		overflow: hidden;
 	}
 
 	.input-model :global(canvas) {

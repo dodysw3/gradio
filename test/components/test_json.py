@@ -23,11 +23,18 @@ class TestJSON:
             "value": None,
             "show_label": True,
             "label": None,
+            "height": None,
             "name": "json",
             "proxy_url": None,
             "_selectable": False,
+            "open": False,
             "key": None,
+            "show_indices": False,
+            "max_height": 500,
+            "min_height": None,
         }
+        js_component = gr.Json(value={"a": 1, "b": 2})
+        assert js_component.get_config()["value"] == {"a": 1, "b": 2}
 
     def test_chatbot_selectable_in_config(self):
         with gr.Blocks() as demo:
@@ -72,14 +79,18 @@ class TestJSON:
             ["F", 30],
         ]
         assert (
-            await iface.process_api(
-                0, [{"data": y_data, "headers": ["gender", "age"]}], state={}
-            )
-        )["data"][0] == {
+            await iface.process_api(0, [{"data": y_data, "headers": ["gender", "age"]}])
+        )["data"][0].model_dump() == {
             "M": 35,
             "F": 25,
             "O": 20,
         }
+
+    @pytest.mark.asyncio
+    async def test_dict_with_path_key_not_moved(self):
+        iface = gr.Interface(lambda x: x, "json", "json")
+        y_data = {"assets": {"path": "foo"}}
+        assert (await iface.process_api(0, [y_data]))["data"][0].model_dump() == y_data
 
     @pytest.mark.parametrize(
         "value, expected",
@@ -95,5 +106,8 @@ class TestJSON:
     def test_postprocess_returns_json_serializable_value(self, value, expected):
         json_component = gr.JSON()
         postprocessed_value = json_component.postprocess(value)
-        assert postprocessed_value == expected
-        assert json.loads(json.dumps(postprocessed_value)) == expected
+        if postprocessed_value is None:
+            assert value is None
+        else:
+            assert postprocessed_value.model_dump() == expected
+            assert json.loads(json.dumps(postprocessed_value.model_dump())) == expected

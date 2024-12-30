@@ -10,7 +10,7 @@
 	import { Upload } from "@gradio/upload";
 	import { Webcam } from "@gradio/image";
 	import { type I18nFormatter } from "@gradio/utils";
-	import { IconButton } from "@gradio/atoms";
+	import { default as IconButton } from "./IconButton.svelte";
 	import { type Client } from "@gradio/client";
 
 	import { add_bg_color, add_bg_image } from "./sources";
@@ -27,6 +27,8 @@
 	export let i18n: I18nFormatter;
 	export let upload: Client["upload"];
 	export let stream_handler: Client["stream"];
+	export let dragging: boolean;
+	export let max_height: number;
 
 	const { active_tool } = getContext<ToolContext>(TOOL_KEY);
 	const { pixi, dimensions, register_context, reset, editor_box } =
@@ -107,7 +109,8 @@
 				$pixi.background_container,
 				$pixi.renderer,
 				background,
-				$pixi.resize
+				$pixi.resize,
+				max_height
 			);
 			$dimensions = await add_image.start();
 
@@ -179,13 +182,21 @@
 		{/each}
 		<span class="sep"></span>
 	</div>
-	<div class="upload-container">
+	<div
+		class="upload-container"
+		class:click-disabled={!!bg ||
+			active_mode === "webcam" ||
+			$active_tool !== "bg"}
+		style:height="{$editor_box.child_height +
+			($editor_box.child_top - $editor_box.parent_top)}px"
+	>
 		<Upload
-			hidden={true}
+			hidden={bg || active_mode === "webcam" || $active_tool !== "bg"}
 			bind:this={upload_component}
 			filetype="image/*"
 			on:load={handle_upload}
 			on:error
+			bind:dragging
 			{root}
 			disable_click={!sources.includes("upload")}
 			format="blob"
@@ -249,5 +260,19 @@
 		align-items: center;
 		margin-left: var(--spacing-lg);
 		height: 100%;
+	}
+
+	.upload-container {
+		position: absolute;
+		height: 100%;
+		flex-shrink: 1;
+		max-height: 100%;
+		width: 100%;
+		left: 0;
+		top: 0;
+	}
+
+	.upload-container.click-disabled {
+		pointer-events: none;
 	}
 </style>

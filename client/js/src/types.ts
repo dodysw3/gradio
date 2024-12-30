@@ -1,9 +1,14 @@
 // API Data Types
 
 import { hardware_types } from "./helpers/spaces";
+import type { SvelteComponent } from "svelte";
+import type { ComponentType } from "svelte";
 
 export interface ApiData {
 	label: string;
+	parameter_name: string;
+	parameter_default?: any;
+	parameter_has_default?: boolean;
 	type: {
 		type: any;
 		description: string;
@@ -16,6 +21,9 @@ export interface ApiData {
 
 export interface JsApiData {
 	label: string;
+	parameter_name: string;
+	parameter_default?: any;
+	parameter_has_default?: boolean;
 	type: string;
 	description: string;
 	component: string;
@@ -43,28 +51,46 @@ export interface BlobRef {
 
 export type DataType = string | Buffer | Record<string, any> | any[];
 
-// Event and Submission Types
+// custom class used for uploading local files
+export class Command {
+	type: string;
+	command: string;
+	meta: {
+		path: string;
+		name: string;
+		orig_path: string;
+	};
+	fileData?: FileData;
 
-type event = <K extends EventType>(
-	eventType: K,
-	listener: EventListener<K>
-) => SubmitReturn;
+	constructor(
+		command: string,
+		meta: { path: string; name: string; orig_path: string }
+	) {
+		this.type = "command";
+		this.command = command;
+		this.meta = meta;
+	}
+}
 
-type predict = (
+// Function Signature Types
+
+export type SubmitFunction = (
 	endpoint: string | number,
-	data?: unknown[],
+	data?: unknown[] | Record<string, unknown>,
+	event_data?: unknown,
+	trigger_id?: number | null
+) => SubmitIterable<GradioEvent>;
+
+export type PredictFunction = (
+	endpoint: string | number,
+	data?: unknown[] | Record<string, unknown>,
 	event_data?: unknown
-) => Promise<unknown>;
+) => Promise<PredictReturn>;
 
 export type client_return = {
 	config: Config | undefined;
-	predict: predict;
-	submit: (
-		endpoint: string | number,
-		data: unknown[],
-		event_data?: unknown,
-		trigger_id?: number | null
-	) => SubmitReturn;
+	predict: PredictFunction;
+	submit: SubmitFunction;
 	component_server: (
 		component_id: number,
 		fn_name: string,
@@ -73,11 +99,18 @@ export type client_return = {
 	view_api: (_fetch: typeof fetch) => Promise<ApiInfo<JsApiData>>;
 };
 
-export type SubmitReturn = {
-	on: event;
-	off: event;
+export interface SubmitIterable<T> extends AsyncIterable<T> {
+	[Symbol.asyncIterator](): AsyncIterator<T>;
 	cancel: () => Promise<void>;
-	destroy: () => void;
+	event_id: () => string;
+}
+
+export type PredictReturn = {
+	type: EventType;
+	time: Date;
+	data: unknown;
+	endpoint: string;
+	fn_index: number;
 };
 
 // Space Status Types
@@ -85,12 +118,19 @@ export type SubmitReturn = {
 export type SpaceStatus = SpaceStatusNormal | SpaceStatusError;
 
 export interface SpaceStatusNormal {
-	status: "sleeping" | "running" | "building" | "error" | "stopped";
+	status:
+		| "sleeping"
+		| "running"
+		| "building"
+		| "error"
+		| "stopped"
+		| "starting";
 	detail:
 		| "SLEEPING"
 		| "RUNNING"
 		| "RUNNING_BUILDING"
 		| "BUILDING"
+		| "APP_STARTING"
 		| "NOT_FOUND";
 	load_status: "pending" | "error" | "complete" | "generating";
 	message: string;
@@ -114,11 +154,11 @@ export type SpaceStatusCallback = (a: SpaceStatus) => void;
 // Configuration and Response Types
 // --------------------------------
 export interface Config {
-	auth_required: boolean;
+	auth_required?: true;
 	analytics_enabled: boolean;
 	connect_heartbeat: boolean;
 	auth_message: string;
-	components: any[];
+	components: ComponentMeta[];
 	css: string | null;
 	js: string | null;
 	head: string | null;
@@ -141,9 +181,54 @@ export interface Config {
 	path: string;
 	protocol: "sse_v3" | "sse_v2.1" | "sse_v2" | "sse_v1" | "sse" | "ws";
 	max_file_size?: number;
+	theme_hash?: number;
+	username: string | null;
+	api_prefix?: string;
+	fill_height?: boolean;
+	fill_width?: boolean;
+}
+
+// todo: DRY up types
+export interface ComponentMeta {
+	type: string;
+	id: number;
+	has_modes: boolean;
+	props: SharedProps;
+	instance: SvelteComponent;
+	component: ComponentType<SvelteComponent>;
+	documentation?: Documentation;
+	children?: ComponentMeta[];
+	parent?: ComponentMeta;
+	value?: any;
+	component_class_id: string;
+	key: string | number | null;
+	rendered_in?: number;
+}
+
+interface SharedProps {
+	elem_id?: string;
+	elem_classes?: string[];
+	components?: string[];
+	server_fns?: string[];
+	interactive: boolean;
+	[key: string]: unknown;
+	root_url?: string;
+}
+
+export interface Documentation {
+	type?: TypeDescription;
+	description?: TypeDescription;
+	example_data?: string;
+}
+
+interface TypeDescription {
+	input_payload?: string;
+	response_object?: string;
+	payload?: string;
 }
 
 export interface Dependency {
+	id: number;
 	targets: [number, string][];
 	inputs: number[];
 	outputs: number[];
@@ -169,11 +254,17 @@ export interface Dependency {
 	final_event: Payload | null;
 	show_api: boolean;
 	zerogpu?: boolean;
+	rendered_in: number | null;
+	connection: "stream" | "sse";
+	time_limit: number;
+	stream_every: number;
+	like_user_message: boolean;
+	event_specific_args: string[];
 }
 
 export interface DependencyTypes {
-	continuous: boolean;
 	generator: boolean;
+	cancel: boolean;
 }
 
 export interface Payload {
@@ -205,6 +296,10 @@ export interface DuplicateOptions extends ClientOptions {
 export interface ClientOptions {
 	hf_token?: `hf_${string}`;
 	status_callback?: SpaceStatusCallback | null;
+	auth?: [string, string] | null;
+	with_null_state?: boolean;
+	events?: EventType[];
+	headers?: Record<string, string>;
 }
 
 export interface FileData {
@@ -223,28 +318,27 @@ export interface FileData {
 export type EventType = "data" | "status" | "log" | "render";
 
 export interface EventMap {
-	data: Payload;
-	status: Status;
+	data: PayloadMessage;
+	status: StatusMessage;
 	log: LogMessage;
 	render: RenderMessage;
 }
 
-export type Event<K extends EventType> = {
-	[P in K]: EventMap[P] & { type: P; endpoint: string; fn_index: number };
-}[K];
-export type EventListener<K extends EventType> = (event: Event<K>) => void;
-export type ListenerMap<K extends EventType> = {
-	[P in K]?: EventListener<K>[];
-};
-export interface LogMessage {
+export type GradioEvent = {
+	[P in EventType]: EventMap[P];
+}[EventType];
+
+export interface Log {
 	log: string;
-	level: "warning" | "info";
+	title: string;
+	level: "warning" | "info" | "success";
 }
-export interface RenderMessage {
-	fn_index: number;
+export interface Render {
 	data: {
 		components: any[];
 		layout: any;
+		dependencies: Dependency[];
+		render_id: number;
 	};
 }
 
@@ -252,11 +346,14 @@ export interface Status {
 	queue: boolean;
 	code?: string;
 	success?: boolean;
-	stage: "pending" | "error" | "complete" | "generating";
+	stage: "pending" | "error" | "complete" | "generating" | "streaming";
+	duration?: number;
+	visible?: boolean;
 	broken?: boolean;
 	size?: number;
 	position?: number;
 	eta?: number;
+	title?: string;
 	message?: string;
 	progress_data?: {
 		progress: number | null;
@@ -266,4 +363,33 @@ export interface Status {
 		desc: string | null;
 	}[];
 	time?: Date;
+	changed_state_ids?: number[];
+	time_limit?: number;
+}
+
+export interface StatusMessage extends Status {
+	type: "status";
+	endpoint: string;
+	fn_index: number;
+	original_msg?: string;
+}
+
+export interface PayloadMessage extends Payload {
+	type: "data";
+	endpoint: string;
+	fn_index: number;
+}
+
+export interface LogMessage extends Log {
+	type: "log";
+	endpoint: string;
+	fn_index: number;
+	duration: number | null;
+	visible: boolean;
+}
+
+export interface RenderMessage extends Render {
+	type: "render";
+	endpoint: string;
+	fn_index: number;
 }

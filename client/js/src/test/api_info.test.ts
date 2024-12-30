@@ -1,12 +1,19 @@
-import { QUEUE_FULL_MSG, SPACE_METADATA_ERROR_MSG } from "../constants";
+import {
+	INVALID_URL_MSG,
+	QUEUE_FULL_MSG,
+	SPACE_METADATA_ERROR_MSG
+} from "../constants";
 import { beforeAll, afterEach, afterAll, it, expect, describe } from "vitest";
 import {
 	handle_message,
 	get_description,
 	get_type,
-	process_endpoint
+	process_endpoint,
+	join_urls,
+	map_data_to_params
 } from "../helpers/api_info";
 import { initialise_server } from "./server";
+import { transformed_api_info } from "./test_data";
 
 const server = initialise_server();
 
@@ -231,6 +238,7 @@ describe("handle_message", () => {
 		const result = handle_message(data, last_status);
 		expect(result).toEqual({
 			type: "update",
+			original_msg: "process_starts",
 			status: {
 				queue: true,
 				stage: "pending",
@@ -433,9 +441,7 @@ describe("process_endpoint", () => {
 		try {
 			await process_endpoint(app_reference, hf_token);
 		} catch (error) {
-			expect(error.message).toEqual(
-				SPACE_METADATA_ERROR_MSG + "Unexpected end of JSON input"
-			);
+			expect(error.message).toEqual(SPACE_METADATA_ERROR_MSG);
 		}
 	});
 
@@ -452,5 +458,203 @@ describe("process_endpoint", () => {
 
 		const result = await process_endpoint("hmb/hello_world");
 		expect(result).toEqual(expected);
+	});
+
+	it("processes local server URLs correctly", async () => {
+		const local_url = "http://localhost:7860/gradio";
+		const response_local_url = await process_endpoint(local_url);
+		expect(response_local_url.space_id).toBe(false);
+		expect(response_local_url.host).toBe("localhost:7860/gradio");
+
+		const local_url_2 = "http://localhost:7860/gradio/";
+		const response_local_url_2 = await process_endpoint(local_url_2);
+		expect(response_local_url_2.space_id).toBe(false);
+		expect(response_local_url_2.host).toBe("localhost:7860/gradio");
+	});
+
+	it("handles hugging face space references", async () => {
+		const space_id = "hmb/hello_world";
+
+		const response = await process_endpoint(space_id);
+		expect(response.space_id).toBe(space_id);
+		expect(response.host).toContain("hf.space");
+	});
+
+	it("handles hugging face domain URLs", async () => {
+		const app_reference = "https://hmb-hello-world.hf.space/";
+		const response = await process_endpoint(app_reference);
+		expect(response.space_id).toBe("hmb-hello-world");
+		expect(response.host).toBe("hmb-hello-world.hf.space");
+	});
+
+	it("handles huggingface subpath urls", async () => {
+		const app_reference =
+			"https://pngwn-pr-demos-test.hf.space/demo/audio_debugger/";
+		const response = await process_endpoint(app_reference);
+		expect(response.space_id).toBe("pngwn-pr-demos-test");
+		expect(response.host).toBe(
+			"pngwn-pr-demos-test.hf.space/demo/audio_debugger"
+		);
+
+		expect(response.http_protocol).toBe("https:");
+	});
+});
+
+describe("join_urls", () => {
+	it("joins URLs correctly", () => {
+		expect(join_urls("http://localhost:7860", "/gradio")).toBe(
+			"http://localhost:7860/gradio"
+		);
+		expect(join_urls("http://localhost:7860/", "/gradio")).toBe(
+			"http://localhost:7860/gradio"
+		);
+		expect(join_urls("http://localhost:7860", "app/", "/gradio")).toBe(
+			"http://localhost:7860/app/gradio"
+		);
+		expect(join_urls("http://localhost:7860/", "/app/", "/gradio/")).toBe(
+			"http://localhost:7860/app/gradio/"
+		);
+
+		expect(join_urls("http://127.0.0.1:8000/app", "/config")).toBe(
+			"http://127.0.0.1:8000/app/config"
+		);
+
+		expect(join_urls("http://127.0.0.1:8000/app/gradio", "/config")).toBe(
+			"http://127.0.0.1:8000/app/gradio/config"
+		);
+	});
+	it("throws an error when the URLs are not valid", () => {
+		expect(() => join_urls("localhost:7860", "/gradio")).toThrowError(
+			INVALID_URL_MSG
+		);
+
+		expect(() => join_urls("localhost:7860", "/gradio", "app")).toThrowError(
+			INVALID_URL_MSG
+		);
+	});
+});
+
+describe("map_data_params", () => {
+	let test_data = transformed_api_info;
+
+	test_data.named_endpoints["/predict"].parameters = [
+		{
+			parameter_name: "param1",
+			parameter_has_default: false,
+			label: "",
+			component: "",
+			serializer: "",
+			python_type: {
+				type: "",
+				description: ""
+			},
+			type: {
+				type: "",
+				description: ""
+			}
+		},
+		{
+			parameter_name: "param2",
+			parameter_has_default: false,
+			label: "",
+			type: {
+				type: "",
+				description: ""
+			},
+			component: "",
+			serializer: "",
+			python_type: {
+				type: "",
+				description: ""
+			}
+		},
+		{
+			parameter_name: "param3",
+			parameter_has_default: true,
+			parameter_default: 3,
+			label: "",
+			type: {
+				type: "",
+				description: ""
+			},
+			component: "",
+			serializer: "",
+			python_type: {
+				type: "",
+				description: ""
+			}
+		}
+	];
+
+	let endpoint_info = test_data.named_endpoints["/predict"];
+
+	it("should return an array of data when data is an array", () => {
+		const data = [1, 2];
+
+		const result = map_data_to_params(data, endpoint_info);
+		expect(result).toEqual(data);
+	});
+
+	it("should return an empty array when data is an empty array", () => {
+		const data = [];
+
+		const result = map_data_to_params(data, endpoint_info);
+		expect(result).toEqual(data);
+	});
+
+	it("should return an empty array when data is not defined", () => {
+		const data = undefined;
+
+		const result = map_data_to_params(data, endpoint_info);
+		expect(result).toEqual([]);
+	});
+
+	it("should return the data when too many arguments are provided for the endpoint", () => {
+		const data = [1, 2, 3, 4];
+
+		const result = map_data_to_params(data, endpoint_info);
+		expect(result).toEqual(data);
+	});
+
+	it("should return an array of resolved data when data is an object", () => {
+		const data = {
+			param1: 1,
+			param2: 2,
+			param3: 3
+		};
+
+		const result = map_data_to_params(data, endpoint_info);
+		expect(result).toEqual([1, 2, 3]);
+	});
+
+	it("should use the default value when a keyword argument is not provided and has a default value", () => {
+		const data = {
+			param1: 1,
+			param2: 2
+		};
+
+		const result = map_data_to_params(data, endpoint_info);
+		expect(result).toEqual([1, 2, 3]);
+	});
+
+	it("should throw an error when an invalid keyword argument is provided", () => {
+		const data = {
+			param1: 1,
+			param2: 2,
+			param3: 3,
+			param4: 4
+		};
+
+		expect(() => map_data_to_params(data, endpoint_info)).toThrowError(
+			"Parameter `param4` is not a valid keyword argument. Please refer to the API for usage."
+		);
+	});
+
+	it("should throw an error when no value is provided for a required parameter", () => {
+		const data = {};
+
+		expect(() => map_data_to_params(data, endpoint_info)).toThrowError(
+			"No value provided for required parameter: param1"
+		);
 	});
 });

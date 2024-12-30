@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 from gradio_client import media_data
 from gradio_client import utils as client_utils
-from scipy.io import wavfile
 
 import gradio as gr
 from gradio import processing_utils, utils
@@ -24,6 +23,7 @@ class TestAudio:
         x_wav = FileData(path=media_data.BASE64_AUDIO["path"])
         audio_input = gr.Audio()
         output1 = audio_input.preprocess(x_wav)
+        assert isinstance(output1, tuple)
         assert output1[0] == 8000
         assert output1[1].shape == (8046,)
 
@@ -31,6 +31,7 @@ class TestAudio:
         x_wav = x_wav[0]
         audio_input = gr.Audio(type="filepath")
         output1 = audio_input.preprocess(x_wav)
+        assert isinstance(output1, str)
         assert Path(output1).name.endswith("audio_sample.wav")
 
         audio_input = gr.Audio(label="Upload Your Audio")
@@ -54,7 +55,8 @@ class TestAudio:
             "interactive": None,
             "proxy_url": None,
             "type": "numpy",
-            "format": "wav",
+            "format": None,
+            "recording": False,
             "streamable": False,
             "max_length": None,
             "min_length": None,
@@ -69,13 +71,14 @@ class TestAudio:
             },
             "_selectable": False,
             "key": None,
+            "loop": False,
         }
         assert audio_input.preprocess(None) is None
 
         audio_input = gr.Audio(type="filepath")
         assert isinstance(audio_input.preprocess(x_wav), str)
         with pytest.raises(ValueError):
-            gr.Audio(type="unknown")
+            gr.Audio(type="unknown")  # type: ignore
 
         rng = np.random.default_rng()
         # Confirm Audio can be instantiated with a numpy array
@@ -87,7 +90,8 @@ class TestAudio:
         )
         audio_output = gr.Audio(type="filepath")
         assert filecmp.cmp(
-            y_audio.name, audio_output.postprocess(y_audio.name).model_dump()["path"]
+            y_audio.name,
+            audio_output.postprocess(y_audio.name).model_dump()["path"],  # type: ignore
         )
         assert audio_output.get_config() == {
             "autoplay": False,
@@ -102,6 +106,7 @@ class TestAudio:
             "container": True,
             "editable": True,
             "min_width": 160,
+            "recording": False,
             "scale": None,
             "elem_id": None,
             "elem_classes": [],
@@ -110,7 +115,7 @@ class TestAudio:
             "interactive": None,
             "proxy_url": None,
             "type": "filepath",
-            "format": "wav",
+            "format": None,
             "streamable": False,
             "sources": ["upload", "microphone"],
             "waveform_options": {
@@ -124,10 +129,11 @@ class TestAudio:
             },
             "_selectable": False,
             "key": None,
+            "loop": False,
         }
 
-        output1 = audio_output.postprocess(y_audio.name).model_dump()
-        output2 = audio_output.postprocess(Path(y_audio.name)).model_dump()
+        output1 = audio_output.postprocess(y_audio.name).model_dump()  # type: ignore
+        output2 = audio_output.postprocess(Path(y_audio.name)).model_dump()  # type: ignore
         assert output1 == output2
 
     def test_default_value_postprocess(self):
@@ -162,16 +168,6 @@ class TestAudio:
         iface = gr.Interface(generate_noise, "slider", "audio")
         assert iface(100).endswith(".wav")
 
-    def test_audio_preprocess_can_be_read_by_scipy(self, gradio_temp_dir):
-        x_wav = FileData(
-            path=processing_utils.save_base64_to_cache(
-                media_data.BASE64_MICROPHONE["data"], cache_dir=gradio_temp_dir
-            )
-        )
-        audio_input = gr.Audio(type="filepath")
-        output = audio_input.preprocess(x_wav)
-        wavfile.read(output)
-
     def test_prepost_process_to_mp3(self, gradio_temp_dir):
         x_wav = FileData(
             path=processing_utils.save_base64_to_cache(
@@ -180,8 +176,27 @@ class TestAudio:
         )
         audio_input = gr.Audio(type="filepath", format="mp3")
         output = audio_input.preprocess(x_wav)
+        assert isinstance(output, str)
         assert output.endswith("mp3")
         output = audio_input.postprocess(
             (48000, np.random.randint(-256, 256, (5, 3)).astype(np.int16))
-        ).model_dump()
+        ).model_dump()  # type: ignore
         assert output["path"].endswith("mp3")
+
+    @pytest.mark.asyncio
+    async def test_combine_stream_audio(self, gradio_temp_dir):
+        x_wav = FileData(
+            path=processing_utils.save_base64_to_cache(
+                media_data.BASE64_MICROPHONE["data"], cache_dir=gradio_temp_dir
+            )
+        )
+        bytes_output = [Path(x_wav.path).read_bytes()] * 2
+        output = await gr.Audio().combine_stream(
+            bytes_output, desired_output_format="wav"
+        )
+        assert str(output.path).endswith("wav")
+
+        output = await gr.Audio().combine_stream(
+            bytes_output, desired_output_format=None
+        )
+        assert str(output.path).endswith("mp3")

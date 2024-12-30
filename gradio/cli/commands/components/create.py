@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import typer
 from rich import print
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from tomlkit import dump, parse
-from typing_extensions import Annotated
 
 from gradio.analytics import custom_component_analytics
 
@@ -156,14 +155,14 @@ def _create(
                 pyproject_toml["project"]["license"] = license_  # type: ignore
 
                 requires_python = Prompt.ask(
-                    "\n:snake: Please enter the [bold][magenta]allowed python[/][/] versions for your component. Leave blank for '>=3.8'"
+                    "\n:snake: Please enter the [bold][magenta]allowed python[/][/] versions for your component. Leave blank for '>=3.10'"
                 )
-                requires_python = requires_python or ">=3.8"
+                requires_python = requires_python or ">=3.10"
                 print(
                     f":snake: Using requires-python of [bold][magenta]{requires_python}[/][/]"
                 )
                 pyproject_toml["project"]["requires-python"] = (  # type: ignore
-                    requires_python or ">=3.8"
+                    requires_python or ">=3.10"
                 )
 
                 print(
@@ -177,7 +176,7 @@ def _create(
                         break
                 current_keywords = pyproject_toml["project"].get("keywords", [])  # type: ignore
                 pyproject_toml["project"]["keywords"] = current_keywords + keywords  # type: ignore
-                with open(directory / "pyproject.toml", "w") as f:
+                with open(directory / "pyproject.toml", "w", encoding="utf-8") as f:
                     dump(pyproject_toml, f)
 
         (directory / "demo" / "requirements.txt").write_text(package_name)

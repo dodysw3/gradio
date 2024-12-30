@@ -6,7 +6,7 @@
 #
 aiofiles==23.2.1
     # via gradio
-altair==4.2.0
+altair>=5.0
     # via
     #   -r requirements.in
     #   gradio
@@ -20,7 +20,7 @@ appnope==0.1.4
     # via ipython
 asyncio==3.4.3
     # via -r requirements.in
-attrs==21.4.0
+attrs==23.1.0
     # via
     #   jsonschema
     #   pytest
@@ -55,7 +55,7 @@ cycler==0.12.1
     # via matplotlib
 decorator==5.1.1
     # via ipython
-diffusers==0.26.3
+diffusers==0.30.3
     # via -r requirements.in
 dnspython==2.6.1
     # via email-validator
@@ -86,26 +86,19 @@ gradio-client==0.10.0
     # via gradio
 gradio-pdf==0.0.7
     # via -r requirements.in
-h11==0.12.0
+h11==0.14.0
     # via
     #   httpcore
     #   uvicorn
-httpcore==0.15.0
+httpcore==1.0.5
     # via httpx
-httpx==0.23.0
+httpx==0.28.1
     # via
     #   -r requirements.in
     #   gradio
     #   gradio-client
     #   respx
-huggingface-hub==0.21.4
-    # via
-    #   -r requirements.in
-    #   diffusers
-    #   gradio
-    #   gradio-client
-    #   tokenizers
-    #   transformers
+hypothesis==6.108.9
 idna==3.3
     # via
     #   anyio
@@ -200,7 +193,7 @@ pillow==9.2.0
     #   imageio
     #   matplotlib
     #   scikit-image
-pluggy==1.0.0
+pluggy==1.5.0
     # via pytest
 polars==0.20.5
     # via -r requirements.in
@@ -227,7 +220,7 @@ pyparsing==3.0.9
     # via matplotlib
 pyrsistent==0.18.1
     # via jsonschema
-pytest==7.1.2
+pytest==8.3.2
     # via
     #   -r requirements.in
     #   pytest-asyncio
@@ -235,6 +228,8 @@ pytest==7.1.2
 pytest-asyncio==0.19.0
     # via -r requirements.in
 pytest-cov==3.0.0
+    # via -r requirements.in
+pytest-rerunfailures==14.0
     # via -r requirements.in
 python-dateutil==2.8.2
     # via
